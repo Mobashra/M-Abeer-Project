@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-
-
+from streamlit import column_config
 
 # Caching to speed up reloads
 @st.cache_data
@@ -11,23 +10,24 @@ def load_data():
 st.title("📊 Data Table")
 df = load_data()
 
-# Show table with line chart preview
-#st.write("### Dataset Overview")
-#st.dataframe(
-#    df.T.style.bar(color="lightblue", axis=1),  # Transposed for row view
-#    use_container_width=True
-#)
+st.write("### Variables with First Month Value and Trend Preview")
 
-# Alternative with st.data_editor + LineChartColumn
-st.write("### Table with LineChartColumn Example")
+# Build summary table:
+# - One row per variable (CSV column)
+# - First month value
+# - Full series for sparkline
+summary = pd.DataFrame({
+    "Variable": df.columns,
+    "First Month": [df[col].iloc[0] for col in df.columns],
+    "Trend": [df[col].tolist() for col in df.columns]
+})
 
-if "st" in dir(st):  # Check Streamlit version supports LineChartColumn
-    from streamlit import column_config
-
-    st.dataframe(
-        df.T,
-        column_config={
-            df.columns[0]: column_config.LineChartColumn("First Month")
-        },
-        use_container_width=True
-    )
+st.dataframe(
+    summary,
+    column_config={
+        "First Month": st.column_config.NumberColumn("First Month Value"),
+        "Trend": column_config.LineChartColumn("Data Trend")
+    },
+    hide_index=True,
+    use_container_width=True,
+)
