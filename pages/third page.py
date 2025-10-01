@@ -31,18 +31,20 @@ if isinstance(selected_range, tuple):
 else:
     subset = df[df['Month'] == selected_range]
 
-# --- Step 2: Column selection ---
-columns = [col for col in df.columns if col != 'Month']
-choice = st.selectbox("Select a column to plot", ["All"] + columns)
-
-# --- Step 3: Plot ---
-fig, ax = plt.subplots(figsize=(12, 5))
-
-# Set datetime as index for plotting
+# --- Step 2: Set datetime as index for plotting ---
 subset_plot = subset.set_index(datetime_col)
 
+# Only keep numeric columns for plotting
+numeric_columns = subset_plot.select_dtypes(include='number').columns.tolist()
+
+# --- Step 3: Column selection ---
+choice = st.selectbox("Select a column to plot", ["All"] + numeric_columns)
+
+# --- Step 4: Plot ---
+fig, ax = plt.subplots(figsize=(12, 5))
+
 if choice == "All":
-    subset_plot[columns].plot(ax=ax)
+    subset_plot[numeric_columns].plot(ax=ax)
 else:
     subset_plot[choice].plot(ax=ax, label=choice)
     ax.legend()
