@@ -11,45 +11,48 @@ st.title("📈 Data Plot")
 # Load dataset
 df = load_data()
 
-# --- Step 1: Month range selection ---
-# Assume first column is "Month" or similar; if not, we'll use index
-if "Month" in df.columns:
-    months = df["Month"].tolist()
-    df = df.set_index("Month")
-else:
-    months = list(range(1, len(df) + 1))
-    df.index = months
+# --- Step 0: Ensure datetime is parsed ---
+datetime_col = df.columns[0]  # first column assumed to be datetime
+df[datetime_col] = pd.to_datetime(df[datetime_col])
+df['Month'] = df[datetime_col].dt.month  # extract month number
 
+# --- Step 1: Month range selection ---
+months = list(range(1, 13))  # 12 months
 selected_range = st.select_slider(
     "Select month range",
     options=months,
-    value=(months[0], months[0])  # default: first month
+    value=(months[0], months[0])  # default: January
 )
 
-# Subset data
+# Filter data based on selected month(s)
 if isinstance(selected_range, tuple):
     start, end = selected_range
-    mask = (df.index >= start) & (df.index <= end)
-    subset = df.loc[mask]
+    subset = df[(df['Month'] >= start) & (df['Month'] <= end)]
 else:
-    subset = df.loc[[selected_range]]
+    subset = df[df['Month'] == selected_range]
+
+# Drop the helper 'Month' column for plotting
+subset_plot = subset.drop(columns=['Month'])
 
 # --- Step 2: Column selection ---
-columns = list(df.columns)
+columns = list(subset_plot.columns)
 choice = st.selectbox("Select a column to plot", ["All"] + columns)
 
 # --- Step 3: Plot ---
-fig, ax = plt.subplots(figsize=(10, 5))
+fig, ax = plt.subplots(figsize=(12, 5))
 
 if choice == "All":
-    subset.plot(ax=ax)
+    subset_plot.plot(ax=ax)
 else:
-    subset[choice].plot(ax=ax, label=choice)
+    subset_plot[choice].plot(ax=ax, label=choice)
     ax.legend()
 
 ax.set_title("Open Meteo Data")
-ax.set_xlabel("Month")
+ax.set_xlabel("Datetime")
 ax.set_ylabel("Values")
 ax.grid(True, linestyle="--", alpha=0.6)
+
+# --- Step 4: Limit x-axis to selected month(s) ---
+ax.set_xlim(subset_plot[datetime_col].min(), subset_plot[datetime_col].max())
 
 st.pyplot(fig)
