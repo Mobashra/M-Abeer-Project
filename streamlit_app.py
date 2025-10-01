@@ -12,18 +12,3 @@ st.markdown(
     - `open-meteo-subset.csv`: A subset of weather data from Open-Meteo, including variables like temperature, humidity, wind speed, and more.
     """
 )
-
-# --- Sidebar ---
-st.sidebar.title("📌 IND320 Project")
-st.sidebar.markdown(
-    """
-    **Navigation**  
-    Use the Streamlit **top-left page menu** to navigate between pages.
-    
-    **Available Pages:**  
-    - Home  
-    - Data Table  
-    - Plots  
-    - Analysis
-    """
-)
