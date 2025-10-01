@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 
+st.set_page_config(page_title="📊 Data Table")
+
 # Caching to speed up reloads
 @st.cache_data
 def load_data():
@@ -10,11 +12,11 @@ st.title("📊 Data Table")
 df = load_data()
 
 # Show table with line chart preview
-st.write("### Dataset Overview")
-st.dataframe(
-    df.T.style.bar(color="lightblue", axis=1),  # Transposed for row view
-    use_container_width=True
-)
+#st.write("### Dataset Overview")
+#st.dataframe(
+#    df.T.style.bar(color="lightblue", axis=1),  # Transposed for row view
+#    use_container_width=True
+#)
 
 # Alternative with st.data_editor + LineChartColumn
 st.write("### Table with LineChartColumn Example")
