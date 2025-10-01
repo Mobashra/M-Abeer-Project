@@ -33,8 +33,7 @@ st.dataframe(
             format="%.2f",
             help="First recorded value of the month",
             min_value=summary["First January Value"].min(),
-            max_value=summary["First January Value"].max(),
-            delta=True  # adds small visual indicator
+            max_value=summary["First January Value"].max()
         ),
         "January Trend": column_config.LineChartColumn(
             "January Trend",
