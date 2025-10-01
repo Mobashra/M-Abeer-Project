@@ -20,16 +20,16 @@ january = df[df["month"] == 1]
 variables = df.columns.drop(["time", "month"])
 summary = pd.DataFrame({
     "Variable": variables,
-    "First Value (Jan)": [january[var].iloc[0] for var in variables],
-    "Trend (Jan)": [pd.Series(january[var].values) for var in variables]
+    "First January Value": [january[var].iloc[0] for var in variables],
+    "January Trend": [january[var].tolist() for var in variables]  # keep lists here
 })
 
 # Show table with LineChartColumn
 st.dataframe(
     summary,
     column_config={
-        "First Value (Jan)": st.column_config.NumberColumn("First January Value"),
-        "Trend (Jan)": column_config.LineChartColumn("January Trend"),
+        "First January Value": st.column_config.NumberColumn("First January Value"),
+        "January Trend": column_config.LineChartColumn("January Trend"),
     },
     hide_index=True,
     use_container_width=True,
