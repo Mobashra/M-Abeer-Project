@@ -4,7 +4,8 @@ import streamlit as st
 st.set_page_config(page_title="IND320 PROJECT", layout="wide")
 
 # Main page content
-st.title("WELCOME TO THE IND320 PROJECT APP")
+st.title("IND320 PROJECT")
+st.header("Weather Data Exploration App")
 st.write("Here, you can explore the weather dataset through various interactive pages.")
 st.markdown(
     """
