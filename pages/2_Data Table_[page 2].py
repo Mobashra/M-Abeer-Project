@@ -10,6 +10,10 @@ def load_data():
 
 st.title("📊 Data Table")
 st.markdown("### January Overview: First Value & Trend")
+st.markdown(
+    "This table shows the **first recorded value in January** for each variable "
+    "and a small trend preview for the month."
+)
 
 df = load_data()
 
@@ -24,24 +28,29 @@ summary = pd.DataFrame({
     "January Trend": [january[var].tolist() for var in variables]
 })
 
-# Display table with enhanced column formatting
+# Add some spacing before the table
+st.markdown("---")
+
+# Show table with enhanced column configuration
 st.dataframe(
     summary,
     column_config={
         "First January Value": column_config.NumberColumn(
             "First January Value",
             format="%.2f",
-            help="First recorded value of the month",
-            min_value=summary["First January Value"].min(),
-            max_value=summary["First January Value"].max()
+            help="First recorded value of the month"
         ),
-        "January Trend": column_config.LineChartColumn(
-            "January Trend",
-            color="#1f77b4",
-            line_width=2,
-            height=60
-        ),
+        "January Trend": column_config.LineChartColumn("January Trend"),
     },
     hide_index=True,
     use_container_width=True,
+)
+
+# Optional: Add legend or explanation below
+st.markdown(
+    """
+    **Notes:**  
+    - `First January Value` is the first value of the variable in January.  
+    - `January Trend` shows a mini chart of the variable's progression over the month.  
+    """
 )
