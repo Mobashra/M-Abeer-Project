@@ -4,26 +4,32 @@ from streamlit import column_config
 
 @st.cache_data
 def load_data():
-    return pd.read_csv("open-meteo-subset.csv")
+    df = pd.read_csv("open-meteo-subset.csv", parse_dates=["time"])
+    df["month"] = df["time"].dt.month
+    return df
 
 st.title("📊 Data Table")
 df = load_data()
 
-st.write("### Variables with First Month Value and Trend Preview")
+st.write("### Variables with January First Value and Trend Preview")
+
+# Filter January only
+january = df[df["month"] == 1]
 
 # Build summary table
+variables = df.columns.drop(["time", "month"])
 summary = pd.DataFrame({
-    "Variable": df.columns,
-    "First Month": [df[col].iloc[0] for col in df.columns],
-    "Trend": [pd.Series(df[col].values) for col in df.columns]  # <-- fix here
+    "Variable": variables,
+    "First Value (Jan)": [january[var].iloc[0] for var in variables],
+    "Trend (Jan)": [pd.Series(january[var].values) for var in variables]
 })
 
-# Show table with LineChartColumn for row-wise trends
+# Show table with LineChartColumn
 st.dataframe(
     summary,
     column_config={
-        "First Month": st.column_config.NumberColumn("First Month Value"),
-        "Trend": column_config.LineChartColumn("Data Trend"),
+        "First Value (Jan)": st.column_config.NumberColumn("First January Value"),
+        "Trend (Jan)": column_config.LineChartColumn("January Trend"),
     },
     hide_index=True,
     use_container_width=True,
