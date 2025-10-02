@@ -64,8 +64,8 @@ ax.tick_params(axis="x", labelsize=10)  # font size of x-axis ticks
 ax.tick_params(axis="y", labelsize=10)  # font size of y-axis ticks
 
 # ----- Move x-axis position (example: put it on top) -----
-ax.xaxis.set_ticks_position("top")   # can be 'bottom' or 'top'
-ax.xaxis.set_label_position("top")   # move x-axis label too
+ax.xaxis.set_ticks_position("bottom")   # can be 'bottom' or 'top'
+ax.xaxis.set_label_position("bottom")   # move x-axis label too
 
 ax.grid(True, linestyle="--", alpha=0.6)
 
