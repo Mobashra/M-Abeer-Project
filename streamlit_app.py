@@ -1,12 +1,11 @@
 import streamlit as st
 
-# Set page configuration
+# Setting page configuration
 st.set_page_config(page_title="IND320 PROJECT", layout="wide")
 
 # Main page content
 st.title("IND320 PROJECT")
-
-st.header("Weather Data Exploration App")
+st.header("Welcome to the Weather Data Exploration App")
 
 # Colored text
 st.markdown(
@@ -18,11 +17,8 @@ st.markdown(
     """
     <h4 style='color:green;'>Dataset Used</h4>
     <ul>
-        <li><span style='color:orange;'>open-meteo-subset.csv</span>: 
-        A subset of weather data from Open-Meteo, including variables like 
-        <span style='color:red;'>temperature</span>, 
-        <span style='color:purple;'>humidity</span>, 
-        <span style='color:teal;'>wind speed</span>, and more.</li>
+        <li><span style='color:orange;'>open-meteo-subset.csv</span>
+    
     </ul>
     """,
     unsafe_allow_html=True
