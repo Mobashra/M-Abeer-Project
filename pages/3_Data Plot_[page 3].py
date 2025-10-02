@@ -41,13 +41,15 @@ numeric_columns = subset_plot.select_dtypes(include='number').columns.tolist()
 choice = st.selectbox("Select a column to plot", ["All"] + numeric_columns)
 
 # --- Step 4: Plot ---
+
 fig, ax = plt.subplots(figsize=(12, 5))
 
 if choice == "All":
     subset_plot[numeric_columns].plot(ax=ax)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')  # move outside
 else:
     subset_plot[choice].plot(ax=ax, label=choice)
-    ax.legend()
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')  # move outside
 
 ax.set_title("Graph of all the variables" if choice == "All" else f"Graph of {choice}")
 ax.set_xlabel("Time")
@@ -55,3 +57,4 @@ ax.set_ylabel("Range of values of the variables")
 ax.grid(True, linestyle="--", alpha=0.6)
 
 st.pyplot(fig)
+
