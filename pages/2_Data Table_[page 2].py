@@ -24,7 +24,7 @@ january = df[df["month"] == 1]
 variables = df.columns.drop(["time", "month"])
 summary = pd.DataFrame({
     "Variable": variables,
-    "First January Value": [january[var].iloc[0] for var in variables],
+    "First Recorded Value": [january[var].iloc[0] for var in variables],
     "January Trend": [january[var].tolist() for var in variables]
 })
 
@@ -35,8 +35,8 @@ st.markdown("---")
 st.dataframe(
     summary,
     column_config={
-        "First January Value": column_config.NumberColumn(
-            "First January Value",
+        "First Recorded Value": column_config.NumberColumn(
+            "First Recorded Value",
             format="%.2f",
             help="First recorded value of the month"
         ),
@@ -50,7 +50,7 @@ st.dataframe(
 st.markdown(
     """
     **Notes:**  
-    - `First January Value` is the first value of the variable in January.  
+    - `First January Value` is the first value of the all the variables recorded in January.  
     - `January Trend` shows a mini chart of the variable's progression over the month.  
     """
 )

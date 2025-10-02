@@ -49,9 +49,9 @@ else:
     subset_plot[choice].plot(ax=ax, label=choice)
     ax.legend()
 
-ax.set_title("Open Meteo Data")
-ax.set_xlabel("Datetime")
-ax.set_ylabel("Values")
+ax.set_title("Graph of all the variables" if choice == "All" else f"Graph of {choice}")
+ax.set_xlabel("Time")
+ax.set_ylabel("Range of values of the variables")
 ax.grid(True, linestyle="--", alpha=0.6)
 
 st.pyplot(fig)
