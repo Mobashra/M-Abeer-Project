@@ -9,7 +9,7 @@ st.header("Weather Data Exploration App")
 st.write("Here, you can explore the weather dataset through various interactive pages.")
 st.markdown(
     """
-    **Dataset**  
+    **Dataset Used**  
     - `open-meteo-subset.csv`: A subset of weather data from Open-Meteo, including variables like temperature, humidity, wind speed, and more.
     """
 )
