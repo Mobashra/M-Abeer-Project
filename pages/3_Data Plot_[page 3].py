@@ -54,7 +54,7 @@ else:
 ax.set_title("Graph of all the variables" if choice == "All" else f"Graph of {choice}")
 ax.set_xlabel("Time")
 ax.set_ylabel("Range of values of the variables")
-ax.grid(True, linestyle="--", alpha=0.3)
+ax.grid(True, linestyle="--", alpha=0.5)
 
 st.pyplot(fig)
 
