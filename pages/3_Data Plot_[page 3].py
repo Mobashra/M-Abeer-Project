@@ -46,10 +46,10 @@ fig, ax = plt.subplots(figsize=(14, 7))
 
 if choice == "All":
     subset_plot[numeric_columns].plot(ax=ax)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')  # move outside
+    ax.legend(bbox_to_anchor=(1, 1), loc='upper left')  # move outside
 else:
     subset_plot[choice].plot(ax=ax, label=choice)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')  # move outside
+    ax.legend(bbox_to_anchor=(1, 1), loc='upper left')  # move outside
 
 ax.set_title("Graph of all the variables" if choice == "All" else f"Graph of {choice}")
 ax.set_xlabel("Time")
