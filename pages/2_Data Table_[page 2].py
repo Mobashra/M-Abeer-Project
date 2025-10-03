@@ -10,7 +10,7 @@ def load_data():
 
 # View the data in table format
 df = load_data()
-st.dataframe(df, use_container_width = True)
+st.dataframe(df.drop(columns=["month"]), use_container_width = True)
 
 st.title("📊 Data Table")
 st.markdown("### January Overview: First Value & Trend")
