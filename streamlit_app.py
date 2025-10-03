@@ -7,10 +7,12 @@ st.set_page_config(page_title="IND320 PROJECT", layout="wide")
 st.title("IND320 PROJECT")
 st.header("Welcome to the Weather Data Exploration App")
 
-# Colored text
+# For Colored text
 st.markdown(
     "<p style='color:blue; font-size:20px;'>Here, you can explore the weather dataset through various interactive pages.</p>",
-    unsafe_allow_html=True
+    
+    # Allows to pass raw HTML inside the markdown string
+    unsafe_allow_html = True
 )
 
 st.markdown(
@@ -21,5 +23,12 @@ st.markdown(
     
     </ul>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html = True
 )
+
+st.title("Title of the App")
+st.header("Header")
+st.subheader("Subheader")
+st.caption("This is a caption")
+st.code("print('Hello World!')")  # Displays code nicely
+st.latex(r"E = mc^2")
