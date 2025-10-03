@@ -31,4 +31,4 @@ st.header("Header")
 st.subheader("Subheader")
 st.caption("This is a caption")
 st.code("print('Hello World!')")  # Displays code nicely
-st.latex(r"E = mc^2")
+st.latex(r"Here, you can explore the weather dataset through various interactive pages.")
