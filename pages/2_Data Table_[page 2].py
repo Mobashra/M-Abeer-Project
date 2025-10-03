@@ -4,11 +4,13 @@ from streamlit import column_config
 
 @st.cache_data
 def load_data():
-    st.dataframe(df)
-    df = pd.read_csv("open-meteo-subset.csv", parse_dates=["time"])
+    df = pd.read_csv("open-meteo-subset.csv", parse_dates = ["time"])
     df["month"] = df["time"].dt.month
     return df
 
+# View the data in table format
+df = load_data()
+st.dataframe(df, use_container_width = True)
 
 st.title("📊 Data Table")
 st.markdown("### January Overview: First Value & Trend")
@@ -30,10 +32,10 @@ summary = pd.DataFrame({
     "January Trend": [january[var].tolist() for var in variables]
 })
 
-# Add some spacing before the table
+# Adding some spacing before the table
 st.markdown("---")
 
-# Show table with enhanced column configuration
+# Showing table with enhanced column configuration
 st.dataframe(
     summary,
     column_config={
@@ -48,7 +50,6 @@ st.dataframe(
     use_container_width=True,
 )
 
-# Optional: Add legend or explanation below
 st.markdown(
     """
     **Notes:**  
