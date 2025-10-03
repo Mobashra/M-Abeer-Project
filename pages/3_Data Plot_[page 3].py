@@ -75,5 +75,7 @@ fig.update_layout(
     legend=dict(x=1, y=1, bgcolor="rgba(0,0,0,0)")
 )
 
+
+fig.update_xaxes(dtick = "M1", tickformat = "%b")
 # --- Show chart in Streamlit ---
 st.plotly_chart(fig, use_container_width=True)
