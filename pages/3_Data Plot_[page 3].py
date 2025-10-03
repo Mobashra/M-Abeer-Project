@@ -34,8 +34,12 @@ else:
     subset = df[df['Month'] == month_num]
 
 # Prepare data for plotting 
-subset_plot = subset.set_index(datetime_col) # Set datetime as index
-numeric_columns = subset_plot.select_dtypes(include = 'number').columns.tolist() # Select numeric columns
+# Prepare data for plotting 
+subset_plot = subset.set_index(datetime_col)  # Set datetime as index
+
+# Select numeric columns but exclude "Month"
+numeric_columns = [col for col in subset_plot.select_dtypes(include='number').columns if col != "Month"]
+
 choice = st.selectbox("Select a column to plot", ["All"] + numeric_columns)
 
 # Using Plotly Graph Objects to create the plot
@@ -47,7 +51,7 @@ if choice == "All":
             x = subset_plot.index,
             y = subset_plot[column],
             mode = "lines",
-            name = column
+            name = column  # Different names -> different colors auto-assigned
         ))
     plot_title = "Graph of all variables"
 else:
@@ -58,6 +62,7 @@ else:
         name = choice
     ))
     plot_title = f"Graph of {choice}"
+
 
 # Adding selected month(s) to title
 if isinstance(selected_range, tuple):
