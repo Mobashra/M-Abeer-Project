@@ -12,13 +12,12 @@ st.title("📈 Data Plot")
 
 df = load_data()
 
-# --- Prepare datetime and month ---
-datetime_col = df.columns[0]  # first column assumed to be datetime
+datetime_col = df.columns[0]  
 df[datetime_col] = pd.to_datetime(df[datetime_col])
-df['Month'] = df[datetime_col].dt.month  # extract month
+df['Month'] = df[datetime_col].dt.month  
 
 # --- Month names for slider ---
-months = list(calendar.month_name)[1:]  # ['January', 'February', ..., 'December']
+months = list(calendar.month_name)[1:]  
 
 selected_range = st.select_slider(
     "Select month range",
