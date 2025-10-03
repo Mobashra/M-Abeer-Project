@@ -4,9 +4,11 @@ from streamlit import column_config
 
 @st.cache_data
 def load_data():
+    st.dataframe(df)
     df = pd.read_csv("open-meteo-subset.csv", parse_dates=["time"])
     df["month"] = df["time"].dt.month
     return df
+
 
 st.title("📊 Data Table")
 st.markdown("### January Overview: First Value & Trend")
