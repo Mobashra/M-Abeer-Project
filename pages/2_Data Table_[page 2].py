@@ -10,7 +10,7 @@ def load_data():
 
 
 st.title("📊 Data Table")
-st.markdown("### January Overview: First Value & Trend")
+st.markdown("### January Overview")
 st.markdown(
     "This table shows the variables and a small trend preview for the month."
 )
