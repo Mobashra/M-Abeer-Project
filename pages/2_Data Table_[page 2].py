@@ -29,11 +29,11 @@ st.markdown("---")
 
 st.dataframe(
     summary,
-    column_config={
+    column_config = {
         "January Trend": column_config.LineChartColumn("January Trend"),
     },
-    hide_index=True,
-    use_container_width=True,
+    hide_index = True,
+    use_container_width = True,
 )
 
 

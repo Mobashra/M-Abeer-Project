@@ -15,20 +15,7 @@ st.markdown(
     unsafe_allow_html = True
 )
 
-st.markdown(
-    """
-    <h4 style='color:green;'>Dataset Used</h4>
-    <ul>
-        <li><span style='color:orange;'>open-meteo-subset.csv</span>
-    
-    </ul>
-    """,
-    unsafe_allow_html = True
-)
-
-st.title("Title of the App")
-st.header("Header")
-st.subheader("Subheader")
-st.caption("This is a caption")
-st.code("print('Hello World!')")  # Displays code nicely
-st.latex(r"Here, you can explore the weather dataset through various interactive pages.")
+st.subheader("DATASET")
+st.markdown("""
+- open-meteo-subset.csv
+""")
