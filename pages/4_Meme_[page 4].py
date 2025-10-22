@@ -58,12 +58,13 @@ with col1:
 with col2:
     st.subheader("Monthly Production Trend")
 
-    # Use pills if available, otherwise multiselect
-    selected_groups = st.multiselect(
-    "Select production groups:",
-    options=list(df['production_group'].dropna().unique()),
-    default=list(df['production_group'].dropna().unique())
+    # Pills for production groups
+    selected_groups = st.pills(
+        "Select production groups:",
+        options=list(df['production_group'].dropna().unique()),
+        default=list(df['production_group'].dropna().unique())
     )
+
     # Month selector
     months = sorted(df['date'].dt.strftime('%B').unique())
     selected_month = st.selectbox("Select a month:", months)
