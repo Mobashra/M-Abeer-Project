@@ -28,10 +28,11 @@ collection = get_mongo_collection()
 data = list(collection.find())
 df = pd.DataFrame(data)
 
-# Ensure production_group is clean (no NaNs, all strings)
+# Ensure production_group and price_area are clean
 df['production_group'] = df['production_group'].fillna("Unknown").astype(str)
+df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
 
-# Convert timestamps (milliseconds → datetime)
+# Convert timestamps to datetime
 df['date'] = pd.to_datetime(df['start_time'], unit='ms')
 
 # Rename for clarity
@@ -45,9 +46,6 @@ col1, col2 = st.columns(2)
 # ----- LEFT: Price area + Pie chart -----
 with col1:
     st.subheader("Production Share by Price Area")
-
-    # Ensure price_area column is clean
-    df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
 
     price_areas = sorted(df['price_area'].unique())
     selected_area = st.radio("Select a price area:", price_areas)
@@ -64,14 +62,15 @@ with col1:
 with col2:
     st.subheader("Monthly Production Trend")
 
-    # Unique production groups for pills
+    # Unique production groups
     production_groups = sorted(df['production_group'].unique().tolist())
 
     if production_groups:
         selected_groups = st.pills(
             "Select production groups:",
             options=production_groups,
-            default=production_groups
+            selection_mode="multi",
+            default=production_groups  # all selected by default
         )
     else:
         st.warning("No production groups found in the data.")
