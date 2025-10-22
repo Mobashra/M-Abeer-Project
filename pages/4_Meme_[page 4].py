@@ -28,6 +28,9 @@ collection = get_mongo_collection()
 data = list(collection.find())
 df = pd.DataFrame(data)
 
+# Ensure production_group is clean (no NaNs, all strings)
+df['production_group'] = df['production_group'].fillna("Unknown").astype(str)
+
 # Convert timestamps (milliseconds → datetime)
 df['date'] = pd.to_datetime(df['start_time'], unit='ms')
 
@@ -43,7 +46,10 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("Production Share by Price Area")
 
-    price_areas = sorted(df['price_area'].dropna().unique())
+    # Ensure price_area column is clean
+    df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
+
+    price_areas = sorted(df['price_area'].unique())
     selected_area = st.radio("Select a price area:", price_areas)
 
     filtered_area = df[df['price_area'] == selected_area]
@@ -55,40 +61,35 @@ with col1:
     st.pyplot(fig1)
 
 # ----- RIGHT: Production group + Month + Line chart -----
-
-
-# Get unique production groups as strings and drop NaN
-
 with col2:
     st.subheader("Monthly Production Trend")
 
-    # Pills for production groups
-    production_groups = df['production_group'].dropna().astype(str).unique().tolist()
+    # Unique production groups for pills
+    production_groups = sorted(df['production_group'].unique().tolist())
 
     if production_groups:
         selected_groups = st.pills(
-        "Select production groups:",
-        options=production_groups,
-        default=production_groups  # all selected by default
+            "Select production groups:",
+            options=production_groups,
+            default=production_groups
         )
     else:
         st.warning("No production groups found in the data.")
         selected_groups = []
-
 
     # Month selector
     months = sorted(df['date'].dt.strftime('%B').unique())
     selected_month = st.selectbox("Select a month:", months)
     month_num = datetime.strptime(selected_month, '%B').month
 
-    # Filter data
+    # Filter data for line plot
     filtered = df[
         (df['price_area'] == selected_area) &
         (df['production_group'].isin(selected_groups)) &
         (df['date'].dt.month == month_num)
     ]
 
-    # Group by date for line plot
+    # Group by date and production_group
     line_data = filtered.groupby(['date', 'production_group'])['production_mwh'].sum().reset_index()
 
     # Plot line chart
