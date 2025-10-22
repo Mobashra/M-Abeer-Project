@@ -7,8 +7,8 @@ import plotly.express as px
 # -------------------------------
 # Page setup
 # -------------------------------
-st.set_page_config(page_title="Page 4 - Electricity Data", layout="wide")
-st.title("Electricity Production Overview")
+st.set_page_config(page_title="New Data", layout="wide")
+st.title("Elhub API Data")
 
 # -------------------------------
 # MongoDB connection with caching
@@ -60,15 +60,13 @@ with col1:
 
     price_areas = sorted(df['price_area'].unique())
     selected_area = st.radio("Select a price area:", price_areas, key="price_area")
-
     filtered_area = df[df['price_area'] == selected_area]
 
     if filtered_area.empty:
         st.warning("No data for the selected price area.")
     else:
         pie_data = filtered_area.groupby('production_group')['production_mwh'].sum().reset_index()
-        fig1 = px.pie(pie_data, names='production_group', values='production_mwh',
-                      title=f"Production share in {selected_area}")
+        fig1 = px.pie(pie_data, names='production_group', values='production_mwh', title=f"Production share in {selected_area}")
         st.plotly_chart(fig1, use_container_width=True)
 
 # ----- RIGHT: Production group + Month + Line chart -----
@@ -78,12 +76,7 @@ with col2:
     production_groups = sorted(list({x.strip() for x in df['production_group']}))
 
     if production_groups:
-        selected_groups = st.pills(
-            "Select production groups:",
-            options=production_groups,
-            selection_mode="multi",
-            default=production_groups
-        )
+        selected_groups = st.pills("Select production groups:", options=production_groups, selection_mode="multi", default=production_groups)
     else:
         st.warning("No production groups found.")
         selected_groups = []
@@ -107,14 +100,7 @@ with col2:
             st.warning("No data available for the selected combination.")
         else:
             line_data = filtered_line.groupby(['date', 'production_group'])['production_mwh'].sum().reset_index()
-            fig2 = px.line(
-                line_data,
-                x='date',
-                y='production_mwh',
-                color='production_group',
-                title=f"Production trend in {selected_area} ({selected_month})",
-                markers=True
-            )
+            fig2 = px.line(line_data, x='date',y='production_mwh', color='production_group', title=f"Production trend in {selected_area} ({selected_month})", markers=True)
             fig2.update_layout(xaxis_title="Date", yaxis_title="Production (MWh)")
             st.plotly_chart(fig2, use_container_width=True)
 
