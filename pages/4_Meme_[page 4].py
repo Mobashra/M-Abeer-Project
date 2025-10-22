@@ -55,15 +55,26 @@ with col1:
     st.pyplot(fig1)
 
 # ----- RIGHT: Production group + Month + Line chart -----
+
+
+# Get unique production groups as strings and drop NaN
+
 with col2:
     st.subheader("Monthly Production Trend")
 
     # Pills for production groups
-    selected_groups = st.pills(
+    production_groups = df['production_group'].dropna().astype(str).unique().tolist()
+
+    if production_groups:
+        selected_groups = st.pills(
         "Select production groups:",
-        options=list(df['production_group'].dropna().unique()),
-        default=list(df['production_group'].dropna().unique())
-    )
+        options=production_groups,
+        default=production_groups  # all selected by default
+        )
+    else:
+        st.warning("No production groups found in the data.")
+        selected_groups = []
+
 
     # Month selector
     months = sorted(df['date'].dt.strftime('%B').unique())
