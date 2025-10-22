@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 from pymongo import MongoClient
 from datetime import datetime
+import plotly.express as px
 
 # -------------------------------
 # Page setup
@@ -11,7 +11,7 @@ st.set_page_config(page_title="Page 4 - Electricity Data", layout="wide")
 st.title("Electricity Production Overview")
 
 # -------------------------------
-# MongoDB connection
+# MongoDB connection with caching
 # -------------------------------
 @st.cache_resource
 def get_mongo_collection():
@@ -23,20 +23,31 @@ def get_mongo_collection():
 collection = get_mongo_collection()
 
 # -------------------------------
-# Load and preprocess data
+# Load and preprocess data with caching
 # -------------------------------
-data = list(collection.find())
-df = pd.DataFrame(data)
+@st.cache_data(ttl=600)
+def load_data():
+    data = list(collection.find())
+    df = pd.DataFrame(data)
+    if df.empty:
+        return df
 
-# Ensure production_group and price_area are clean
-df['production_group'] = df['production_group'].fillna("Unknown").astype(str)
-df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
+    # Clean columns
+    df['production_group'] = df['production_group'].fillna("Unknown").astype(str)
+    df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
 
-# Convert timestamps to datetime
-df['date'] = pd.to_datetime(df['start_time'], unit='ms')
+    # Convert timestamps
+    df['date'] = pd.to_datetime(df['start_time'], unit='ms')
 
-# Rename for clarity
-df.rename(columns={'value': 'production_mwh'}, inplace=True)
+    # Rename for clarity
+    df.rename(columns={'value': 'production_mwh'}, inplace=True)
+    return df
+
+df = load_data()
+
+if df.empty:
+    st.warning("No data found in the MongoDB collection.")
+    st.stop()
 
 # -------------------------------
 # Layout with two columns
@@ -48,32 +59,33 @@ with col1:
     st.subheader("Production Share by Price Area")
 
     price_areas = sorted(df['price_area'].unique())
-    selected_area = st.radio("Select a price area:", price_areas)
+    selected_area = st.radio("Select a price area:", price_areas, key="price_area")
 
     filtered_area = df[df['price_area'] == selected_area]
-    pie_data = filtered_area.groupby('production_group')['production_mwh'].sum()
 
-    fig1, ax1 = plt.subplots()
-    ax1.pie(pie_data, labels=pie_data.index, autopct='%1.1f%%', startangle=90)
-    ax1.set_title(f"Production share in {selected_area}")
-    st.pyplot(fig1)
+    if filtered_area.empty:
+        st.warning("No data for the selected price area.")
+    else:
+        pie_data = filtered_area.groupby('production_group')['production_mwh'].sum().reset_index()
+        fig1 = px.pie(pie_data, names='production_group', values='production_mwh',
+                      title=f"Production share in {selected_area}")
+        st.plotly_chart(fig1, use_container_width=True)
 
 # ----- RIGHT: Production group + Month + Line chart -----
 with col2:
     st.subheader("Monthly Production Trend")
 
-    # Unique production groups
-    production_groups = sorted(df['production_group'].unique().tolist())
+    production_groups = sorted(list({x.strip() for x in df['production_group']}))
 
     if production_groups:
         selected_groups = st.pills(
             "Select production groups:",
             options=production_groups,
             selection_mode="multi",
-            default=production_groups  # all selected by default
+            default=production_groups
         )
     else:
-        st.warning("No production groups found in the data.")
+        st.warning("No production groups found.")
         selected_groups = []
 
     # Month selector
@@ -81,27 +93,27 @@ with col2:
     selected_month = st.selectbox("Select a month:", months)
     month_num = datetime.strptime(selected_month, '%B').month
 
-    # Filter data for line plot
-    filtered = df[
+    # Filter data for line chart
+    filtered_line = df[
         (df['price_area'] == selected_area) &
         (df['production_group'].isin(selected_groups)) &
         (df['date'].dt.month == month_num)
     ]
 
-    # Group by date and production_group
-    line_data = filtered.groupby(['date', 'production_group'])['production_mwh'].sum().reset_index()
-
-    # Plot line chart
-    fig2, ax2 = plt.subplots()
-    for group in selected_groups:
-        grp_data = line_data[line_data['production_group'] == group]
-        ax2.plot(grp_data['date'], grp_data['production_mwh'], label=group)
-
-    ax2.set_title(f"Production trend in {selected_area} ({selected_month})")
-    ax2.set_xlabel("Date")
-    ax2.set_ylabel("Production (MWh)")
-    ax2.legend()
-    st.pyplot(fig2)
+    if filtered_line.empty:
+        st.warning("No data available for the selected combination.")
+    else:
+        line_data = filtered_line.groupby(['date', 'production_group'])['production_mwh'].sum().reset_index()
+        fig2 = px.line(
+            line_data,
+            x='date',
+            y='production_mwh',
+            color='production_group',
+            title=f"Production trend in {selected_area} ({selected_month})",
+            markers=True
+        )
+        fig2.update_layout(xaxis_title="Date", yaxis_title="Production (MWh)")
+        st.plotly_chart(fig2, use_container_width=True)
 
 # -------------------------------
 # Expander for data source
