@@ -88,32 +88,35 @@ with col2:
         st.warning("No production groups found.")
         selected_groups = []
 
-    # Month selector
-    months = sorted(df['date'].dt.strftime('%B').unique())
-    selected_month = st.selectbox("Select a month:", months)
-    month_num = datetime.strptime(selected_month, '%B').month
-
-    # Filter data for line chart
-    filtered_line = df[
-        (df['price_area'] == selected_area) &
-        (df['production_group'].isin(selected_groups)) &
-        (df['date'].dt.month == month_num)
-    ]
-
-    if filtered_line.empty:
-        st.warning("No data available for the selected combination.")
+    if not selected_groups:
+        st.warning("Please select at least one production group to display the line chart.")
     else:
-        line_data = filtered_line.groupby(['date', 'production_group'])['production_mwh'].sum().reset_index()
-        fig2 = px.line(
-            line_data,
-            x='date',
-            y='production_mwh',
-            color='production_group',
-            title=f"Production trend in {selected_area} ({selected_month})",
-            markers=True
-        )
-        fig2.update_layout(xaxis_title="Date", yaxis_title="Production (MWh)")
-        st.plotly_chart(fig2, use_container_width=True)
+        # Month selector
+        months = sorted(df['date'].dt.strftime('%B').unique())
+        selected_month = st.selectbox("Select a month:", months)
+        month_num = datetime.strptime(selected_month, '%B').month
+
+        # Filter data for line chart
+        filtered_line = df[
+            (df['price_area'] == selected_area) &
+            (df['production_group'].isin(selected_groups)) &
+            (df['date'].dt.month == month_num)
+        ]
+
+        if filtered_line.empty:
+            st.warning("No data available for the selected combination.")
+        else:
+            line_data = filtered_line.groupby(['date', 'production_group'])['production_mwh'].sum().reset_index()
+            fig2 = px.line(
+                line_data,
+                x='date',
+                y='production_mwh',
+                color='production_group',
+                title=f"Production trend in {selected_area} ({selected_month})",
+                markers=True
+            )
+            fig2.update_layout(xaxis_title="Date", yaxis_title="Production (MWh)")
+            st.plotly_chart(fig2, use_container_width=True)
 
 # -------------------------------
 # Expander for data source
