@@ -54,7 +54,7 @@ if df.empty:
 # -------------------------------
 col1, col2 = st.columns(2)
 
-# ----- LEFT: Price area + Pie chart -----
+# Price area + Pie chart
 with col1:
     st.subheader("Production Share by Price Area")
 
@@ -69,7 +69,7 @@ with col1:
         fig1 = px.pie(pie_data, names='production_group', values='production_mwh', title=f"Production share in {selected_area}")
         st.plotly_chart(fig1, use_container_width=True)
 
-# ----- RIGHT: Production group + Month + Line chart -----
+# Production group + Month + Line chart
 with col2:
     st.subheader("Monthly Production Trend")
 
