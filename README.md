@@ -1,19 +1,7 @@
-# 🎈 Blank app template
 
-A simple Streamlit app template for you to modify!
+## IND320 PROJECT - PART 2
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
 
-### How to run it on your own machine
+### Elhub Electricity Production Dashboard
 
-1. Install the requirements
-
-   ```
-   $ pip install -r requirements.txt
-   ```
-
-2. Run the app
-
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+This project visualizes hourly electricity production in Norway for 2021 using the Elhub API. The data is stored in MongoDB, processed with Spark and pandas, and displayed in an interactive Streamlit dashboard. Users can select a price area to view a pie chart of production share, and choose production group(s) and month to see hourly trends in a line chart. Data source and details are provided in the dashboard. Built with Python, Streamlit, Plotly, PyMongo, and Spark.
