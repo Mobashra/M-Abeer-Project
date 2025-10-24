@@ -6,7 +6,7 @@ import plotly.express as px
 
 
 # Page setup
-st.set_page_config(page_title="New Data", layout="wide")  # Setting page title and wide layout
+st.set_page_config(page_title="Elhub API Data", layout="wide")  # Setting page title and wide layout
 st.title("Elhub API Data")  # Displaying the page header
 
 
