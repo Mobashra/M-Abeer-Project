@@ -38,6 +38,10 @@ def load_data():
 
     # Renaming value column for clarity
     df.rename(columns={'value': 'production_mwh'}, inplace=True)
+    
+    #restricting data to year 2021 only
+    df = df[df["date"].dt.year == 2021]
+    
     return df
 
 df = load_data()  # Loading and preprocessing the data
@@ -59,6 +63,10 @@ with col1:
     price_areas = sorted(df['price_area'].unique())
     selected_area = st.radio("Select a price area:", price_areas, key="price_area")
 
+    # Save selection globally for other pages
+    st.session_state["selected_price_area"] = selected_area
+
+    
     # Filtering data for the selected price area
     filtered_area = df[df['price_area'] == selected_area]
 
