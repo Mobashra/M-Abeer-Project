@@ -21,7 +21,7 @@ st.subheader(f"Selected Price Area: {selected_area}")
 @st.cache_data(show_spinner=False)
 def load_production_data():
     df = pd.read_csv("elhub_2021_production.csv")  # example placeholder
-    df["time"] = pd.to_datetime(df["time"])
+    df["startTime"] = pd.to_datetime(df["time"])
     return df
 
 df_prod = load_production_data()
