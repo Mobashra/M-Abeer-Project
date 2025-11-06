@@ -19,10 +19,29 @@ st.subheader(f"Selected Price Area: {selected_area}")
 
 # --- Load production data (replace with your Elhub API or cached dataset) ---
 @st.cache_data(show_spinner=False)
+@st.cache_data
 def load_production_data():
-    df = pd.read_csv("elhub_2021_production.csv")  # example placeholder
-    df["startTime"] = pd.to_datetime(df["time"])
+    df = pd.read_csv("elhub_2021_production.csv")
+
+    # Rename columns to consistent lowercase names
+    df.rename(
+        columns={
+            "startTime": "time",
+            "priceArea": "price_area",
+            "productionGroup": "production_group",
+            "quantityKwh": "production",
+        },
+        inplace=True,
+    )
+
+    # Convert time column to datetime (with timezone awareness)
+    df["time"] = pd.to_datetime(df["time"], utc=True)
+
+    # Sort by time to ensure correct ordering
+    df = df.sort_values("time").reset_index(drop=True)
+
     return df
+
 
 df_prod = load_production_data()
 df_prod_area = df_prod[df_prod["price_area"] == selected_area]
