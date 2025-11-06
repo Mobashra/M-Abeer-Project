@@ -7,8 +7,8 @@ import plotly.graph_objects as go
 from statsmodels.tsa.seasonal import STL
 from scipy.signal import spectrogram
 
-st.set_page_config(page_title="Weather & Production Analysis", layout="wide")
-st.title("🌦️ Weather & Production Analysis: STL Decomposition & Spectrogram")
+st.set_page_config(page_title="Weather Analysis (STL & Spectrogram)", layout="wide")
+st.title("🌦️ Weather Analysis: STL Decomposition & Spectrogram")
 
 # --- Mapping for price areas to coordinates ---
 CITIES = [
@@ -29,25 +29,9 @@ selected_area = st.session_state["selected_price_area"]
 city_info = df_cities[df_cities["price_area"] == selected_area].iloc[0]
 st.subheader(f"Selected Area: {city_info.city} ({selected_area})")
 
-# --- Load local Elhub production data ---
-@st.cache_data(show_spinner=False)
-def load_production_data():
-    df = pd.read_csv("elhub_production_2021.csv")
-    df["startTime"] = pd.to_datetime(df["startTime"])
-    df = df.rename(
-        columns={
-            "priceArea": "price_area",
-            "productionGroup": "production_group",
-            "quantityKwh": "production",
-        }
-    )
-    return df
-
-df_prod = load_production_data()
-
 # --- Fetch Open-Meteo ERA5 data ---
 @st.cache_data(show_spinner=False)
-def fetch_weather_data(latitude, longitude, year=2021, timezone="Europe/Oslo"):
+def fetch_weather_data(latitude, longitude, year=2021, timezone="UTC"):
     variables = [
         "temperature_2m",
         "precipitation",
@@ -77,84 +61,65 @@ def fetch_weather_data(latitude, longitude, year=2021, timezone="Europe/Oslo"):
 with st.spinner("Fetching weather data from Open-Meteo..."):
     df_weather = fetch_weather_data(city_info.latitude, city_info.longitude)
 
-st.success(f"✅ Weather & Production Data Ready for {city_info.city}, {selected_area} (2021)")
-st.caption(f"Data sources: Elhub & [Open-Meteo ERA5 Reanalysis](https://open-meteo.com/)")
+st.success(f"✅ Data loaded for {city_info.city}, {selected_area} (2021)")
+st.caption(f"Data source: [Open-Meteo ERA5 Reanalysis](https://open-meteo.com/)")
 
-# --- Tabs for analysis ---
-tab1, tab2 = st.tabs(["📈 STL Decomposition (Production)", "🎵 Spectrogram (Weather)"])
+variables = [
+    "temperature_2m",
+    "precipitation",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "wind_direction_10m",
+]
 
-# ----------------------------------------------------------------------
-# TAB 1: STL Decomposition of Elhub Production Data
-# ----------------------------------------------------------------------
+# --- Tabs for STL and Spectrogram ---
+tab1, tab2 = st.tabs(["📈 STL Decomposition", "🎵 Spectrogram"])
+
+# --- Tab 1: STL decomposition ---
 with tab1:
-    st.subheader("STL Decomposition of Electricity Production")
+    st.subheader("Seasonal-Trend Decomposition using STL")
+    variable = st.selectbox("Select variable:", variables, index=0)
 
-    groups = df_prod["production_group"].unique().tolist()
-    selected_group = st.selectbox("Select Production Group:", groups, index=0)
-
-    # Filter and prepare data
-    df_group = df_prod[
-        (df_prod["price_area"] == selected_area)
-        & (df_prod["production_group"] == selected_group)
-    ].set_index("startTime")
-
-    if df_group.empty:
-        st.warning("No data available for this selection.")
+    df_plot = df_weather.set_index("time")[variable].dropna()
+    if df_plot.empty:
+        st.warning("No data available for this variable.")
         st.stop()
 
-    y = df_group["production"].astype(float).dropna()
+    # STL decomposition (period=24 for daily pattern)
+    st.info("STL decomposition with daily periodicity (period = 24).")
+    stl = STL(df_plot, period=24).fit()
 
-    # User parameters for STL
-    st.sidebar.header("STL Parameters")
-    period = st.sidebar.number_input("Period (hours)", min_value=1, value=24)
-    seasonal_smoother = st.sidebar.number_input("Seasonal Smoother", min_value=3, value=7)
-    trend_smoother = st.sidebar.number_input("Trend Smoother", min_value=3, value=15)
-    robust = st.sidebar.checkbox("Robust Mode", value=True)
-
-    with st.spinner("Performing STL Decomposition..."):
-        stl = STL(y, period=period, seasonal=seasonal_smoother, trend=trend_smoother, robust=robust).fit()
-
+    # Build Plotly figure
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=y.index, y=y, name="Original", line=dict(width=1)))
-    fig.add_trace(go.Scatter(x=y.index, y=stl.trend, name="Trend", line=dict(width=2)))
-    fig.add_trace(go.Scatter(x=y.index, y=stl.seasonal, name="Seasonal", line=dict(width=1, dash="dot")))
-    fig.add_trace(go.Scatter(x=y.index, y=stl.resid, name="Residual", line=dict(width=1, dash="dash")))
-
+    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot, name="Original", line=dict(width=1)))
+    fig.add_trace(go.Scatter(x=df_plot.index, y=stl.trend, name="Trend", line=dict(width=2)))
+    fig.add_trace(go.Scatter(x=df_plot.index, y=stl.seasonal, name="Seasonal", line=dict(width=1, dash="dot")))
+    fig.add_trace(go.Scatter(x=df_plot.index, y=stl.resid, name="Residual", line=dict(width=1, dash="dash")))
     fig.update_layout(
-        title=f"STL Decomposition for {selected_group} in {city_info.city} ({selected_area})",
+        title=f"STL Decomposition for {variable} in {city_info.city} (2021)",
         xaxis_title="Time",
-        yaxis_title="Production (kWh)",
+        yaxis_title="Value",
         template="plotly_white",
         legend=dict(x=0, y=1, bgcolor="rgba(0,0,0,0)"),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.write("**Summary Statistics:**")
-    st.dataframe(df_group["production"].describe().to_frame().T)
-
-# ----------------------------------------------------------------------
-# TAB 2: Spectrogram of Weather Variable
-# ----------------------------------------------------------------------
+# --- Tab 2: Spectrogram ---
 with tab2:
-    st.subheader("Spectrogram of Weather Variables")
-
-    variable = st.selectbox("Select weather variable:", [
-        "temperature_2m",
-        "precipitation",
-        "wind_speed_10m",
-        "wind_gusts_10m",
-        "wind_direction_10m",
-    ])
+    st.subheader("Spectrogram Analysis")
+    variable = st.selectbox("Select variable for spectrogram:", variables, index=0, key="spectrogram_var")
 
     df_spec = df_weather.set_index("time")[variable].dropna()
     if df_spec.empty:
         st.warning("No data available for this variable.")
         st.stop()
 
-    fs = 1  # 1 sample per hour
+    # Compute spectrogram
+    fs = 1  # 1 sample/hour
     f, t, Sxx = spectrogram(df_spec.values, fs=fs, nperseg=168, noverlap=84)  # 1-week window
     Sxx_dB = 10 * np.log10(Sxx + 1e-9)
 
+    # Plotly heatmap
     fig_spec = go.Figure(
         data=go.Heatmap(
             z=Sxx_dB,
@@ -165,7 +130,7 @@ with tab2:
         )
     )
     fig_spec.update_layout(
-        title=f"Spectrogram of {variable} in {city_info.city} ({selected_area}, 2021)",
+        title=f"Spectrogram of {variable} in {city_info.city} (2021)",
         xaxis_title="Time (hours since start)",
         yaxis_title="Frequency (1/hour)",
         template="plotly_white",
