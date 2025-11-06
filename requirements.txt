@@ -6,3 +6,4 @@ scikit-learn
 pymongo
 matplotlib
 seaborn
+statsmodels
