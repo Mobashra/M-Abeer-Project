@@ -78,7 +78,16 @@ with tab1:
         st.info(f"STL decomposition with period={period}, trend={trend_smoother}, seasonal={seasonal_smoother}")
 
         # Perform STL decomposition
-        stl = STL(df_group, period=period, seasonal=seasonal_smoother, trend=trend_smoother, robust=robust).fit()
+        #stl = STL(df_group, period=period, seasonal=seasonal_smoother, trend=trend_smoother, robust=robust).fit()
+        # Ensure df_group is numeric and clean
+        y = df_group["production"].astype(float).dropna()
+
+        if y.empty:
+            st.warning("No valid numeric data found for this group.")
+            st.stop()
+
+        # STL decomposition (period=24 means daily pattern if hourly data)
+        stl = STL(y, period=period, seasonal=seasonal_smoother, trend=trend_smoother, robust=robust).fit()
 
         # Plotly figure
         fig = go.Figure()
