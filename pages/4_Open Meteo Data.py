@@ -42,8 +42,8 @@ def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str =
         return pd.DataFrame()
 
 # Page content
-st.title("Weather Data Table (2021)")
-st.info("By default, the table shows weather variable trends for price area NO1. If you want to see a different price area, select from Page 2.")
+st.title("Weather Data Table 2021")
+st.info("By default, the table shows weather variable trends for price area NO1. If you want to see a different price area, select from 'Elhub API Data' page.")
 # Get selected price area from page 2
 selected_area = st.session_state.get("selected_price_area", "NO1")
 city_info = cities[selected_area]
