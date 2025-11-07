@@ -157,11 +157,3 @@ with tab_lof:
         fig_lof.update_layout(title=f"LOF Anomaly Detection: {selected_var_lof} ({selected_area})",xaxis_title="Time", yaxis_title=selected_var_lof,template="plotly_white")
         st.plotly_chart(fig_lof, use_container_width=True)
 
-#Data source expander
-with st.expander("Data Sources"):
-    st.markdown("""
-    1. **Open-Meteo ERA5 Weather Reanalysis 2021**
-       # Source: [Open-Meteo API](https://open-meteo.com/en/docs)
-       # Variables: temperature_2m, precipitation, wind_speed_10m, wind_gusts_10m, wind_direction_10m
-       # Hourly data for the selected Norwegian city.
-    """)
