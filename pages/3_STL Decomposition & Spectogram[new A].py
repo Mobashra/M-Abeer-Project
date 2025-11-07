@@ -45,7 +45,7 @@ def load_elhub_data(price_area: str) -> pd.DataFrame:
     df["production_group"] = df["production_group"].fillna("Unknown")
 
     # Convert timestamps from milliseconds to datetime in Oslo timezone
-    df["date"] = pd.to_datetime(df["start_time"], unit="ms").dt.tz_convert("Europe/Oslo")
+    df["date"] = pd.to_datetime(df["start_time"], unit="ms").dt.tz_localize("UTC").dt.tz_convert("Europe/Oslo")
 
     # Rename production column for consistency
     df.rename(columns={"value": "production_mwh"}, inplace=True)
