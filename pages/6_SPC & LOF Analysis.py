@@ -16,6 +16,11 @@ if "selected_price_area" not in st.session_state:
 
 selected_area = st.session_state["selected_price_area"]
 
+
+st.markdown(f"""
+### Selected Price Area: **:blue[{selected_area}]**
+""")
+
 # ---------------- DATA LOADING FUNCTION ----------------
 @st.cache_data
 def load_elhub_data(price_area):
