@@ -1,164 +1,131 @@
-# page_new_B_production_analysis.py
+# page_new_B_weather_analysis.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
+import requests
 from sklearn.neighbors import LocalOutlierFactor
+from scipy.fftpack import dct, idct
+import plotly.graph_objects as go
 
-# ---------------- PAGE CONFIGURATION ----------------
-st.set_page_config(page_title="Production Analysis (SPC & LOF)", layout="wide")
-st.title("⚡ Production Analysis: Outliers/SPC & Anomalies/LOF")
+# ------------------- PAGE CONFIG -------------------
+st.set_page_config(page_title="Weather Outlier & Anomaly Analysis", layout="wide")
+st.title("Weather Analysis: Outliers (SPC) & Anomalies (LOF)")
 
-# Ensure a price area is selected from the previous page
-if "selected_price_area" not in st.session_state:
-    st.warning("⚠️ Please select a price area in the 'Elhub API Data' page first.")
-    st.stop()
+# ------------------- CITY AND COORDINATES -------------------
+city_coords = {
+    "Oslo": (59.9139, 10.7522),
+    "Bergen": (60.39299, 5.32415),
+    "Trondheim": (63.4305, 10.3951),
+    "Tromsø": (69.6492, 18.9553),
+    "Kristiansand": (58.1467, 7.9956),
+}
 
-selected_area = st.session_state["selected_price_area"]
+# ------------------- USER INPUTS -------------------
+col1, col2 = st.columns(2)
+with col1:
+    selected_city = st.selectbox("Select City:", list(city_coords.keys()), index=0)
+with col2:
+    selected_year = st.selectbox("Select Year:", [2019, 2020, 2021, 2022, 2023, 2024], index=2)
 
+lat, lon = city_coords[selected_city]
+st.info(f"📍 Selected City: **{selected_city}** (Lat: {lat}, Lon: {lon})")
 
-st.markdown(f"""
-### Selected Price Area: **:blue[{selected_area}]**
-""")
+# ------------------- API DATA LOADING -------------------
+@st.cache_data(ttl=3600)
+def fetch_weather_data(lat, lon, year):
+    """Fetch hourly ERA5 reanalysis data from Open-Meteo API for a given city and year."""
+    url = (
+        f"https://archive-api.open-meteo.com/v1/era5?"
+        f"latitude={lat}&longitude={lon}&start_date={year}-01-01&end_date={year}-12-31"
+        "&hourly=temperature_2m,precipitation"
+        "&timezone=Europe/Oslo"
+    )
+    response = requests.get(url)
+    response.raise_for_status()
+    data = response.json()
 
-# ---------------- DATA LOADING FUNCTION ----------------
-@st.cache_data
-def load_elhub_data(price_area):
-    """Load Elhub production data for the selected price area."""
-    df = pd.read_csv("elhub_2021_production.csv", parse_dates=["startTime"])
-    df.rename(columns={"quantityKwh": "production_kwh"}, inplace=True)
-    df["production_group"] = df["productionGroup"]
-    df["price_area"] = df["priceArea"]
-    df = df[df["price_area"] == price_area]
+    df = pd.DataFrame({
+        "time": pd.to_datetime(data["hourly"]["time"]),
+        "temperature": data["hourly"]["temperature_2m"],
+        "precipitation": data["hourly"]["precipitation"],
+    })
     return df
 
-df = load_elhub_data(selected_area)
+df = fetch_weather_data(lat, lon, selected_year)
 
 if df.empty:
-    st.warning(f"No production data found for {selected_area}.")
+    st.warning("No weather data retrieved. Please check API or parameters.")
     st.stop()
 
-# ---------------- UI SELECTION ----------------
-production_groups = sorted(df["production_group"].unique())
-selected_groups = st.multiselect(
-    "Select production group(s):",
-    options=production_groups,
-    default=production_groups
-)
+# ------------------- HELPER FUNCTIONS -------------------
+def high_pass_dct(temp_series, cutoff=50):
+    """Apply Direct Cosine Transform high-pass filter for seasonal adjustment."""
+    temp_dct = dct(temp_series, norm='ortho')
+    temp_dct[:cutoff] = 0  # remove low-frequency components (trend/seasonal)
+    return idct(temp_dct, norm='ortho')
 
-# Filter dataset by selection
-df_filtered = df[df["production_group"].isin(selected_groups)].copy()
-df_filtered.set_index("startTime", inplace=True)
-df_filtered.sort_index(inplace=True)
+# ------------------- TAB LAYOUT -------------------
+tab1, tab2 = st.tabs(["Outlier Detection (SPC)", "Anomaly Detection (LOF)"])
 
-# ---------------- MAIN TABS ----------------
-tab1, tab2 = st.tabs(["SPC Analysis", "LOF Analysis"])
-
-# ==========================================================
-# TAB 1 — OUTLIER & SPC ANALYSIS
-# ==========================================================
+# ------------------- TAB 1: SPC OUTLIERS -------------------
 with tab1:
-    st.subheader("Outlier & SPC Analysis")
+    st.subheader("Outlier Detection using Statistical Process Control (SPC)")
     st.markdown("""
-    This tab detects outliers in electricity production using **Statistical Process Control (SPC)**.
-    - Upper/Lower Control Limits = mean ± 3 × standard deviation  
-    - Points outside these limits are marked as **outliers**.
+    This analysis detects **temperature outliers** using a high-pass filtered signal (DCT) 
+    and control limits based on robust statistics.
     """)
 
-    for group in selected_groups:
-        df_group = df_filtered[df_filtered["production_group"] == group]["production_kwh"]
+    cutoff = st.slider("Frequency cut-off for DCT (lower = more smoothing)", 10, 200, 50, step=10)
+    std_mult = st.slider("Number of standard deviations for control limits", 1.0, 4.0, 3.0, step=0.5)
 
-        # --- Compute SPC stats ---
-        mean_val = df_group.mean()
-        std_val = df_group.std()
-        ucl = mean_val + 3 * std_val
-        lcl = mean_val - 3 * std_val
+    # Compute seasonally adjusted temperature
+    satv = high_pass_dct(df["temperature"].values, cutoff=cutoff)
+    satv_mean, satv_std = np.mean(satv), np.std(satv)
+    upper_limit, lower_limit = satv_mean + std_mult * satv_std, satv_mean - std_mult * satv_std
 
-        # Identify outliers
-        outliers = df_group[(df_group > ucl) | (df_group < lcl)]
-        outlier_count = len(outliers)
-        outlier_percent = (outlier_count / len(df_group)) * 100 if len(df_group) > 0 else 0
+    outliers = (satv > upper_limit) | (satv < lower_limit)
 
-        # --- Display metrics in columns ---
-        st.markdown(f"### ⚙️ Production Group: {group}")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Mean (kWh)", f"{mean_val:.2f}")
-        col2.metric("Std. Dev", f"{std_val:.2f}")
-        col3.metric("Outliers", f"{outlier_count}")
-        col4.metric("Outlier %", f"{outlier_percent:.2f}%")
+    # Plot
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(x=df["time"], y=df["temperature"], mode="lines", name="Temperature (°C)"))
+    fig1.add_trace(go.Scatter(x=df["time"][outliers], y=df["temperature"][outliers],
+                              mode="markers", name="Outliers", marker=dict(color="red", size=5)))
+    fig1.add_hline(y=np.mean(df["temperature"]), line_dash="dot", annotation_text="Mean Temp")
+    fig1.update_layout(
+        title=f"SPC Outlier Detection for {selected_city} ({selected_year})",
+        xaxis_title="Time", yaxis_title="Temperature (°C)", template="plotly_white"
+    )
+    st.plotly_chart(fig1, use_container_width=True)
 
-        # --- Plot SPC Chart ---
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_group.index, y=df_group, mode="lines", name="Production"))
-        fig.add_trace(go.Scatter(x=df_group.index, y=[ucl]*len(df_group), mode="lines", name="UCL", line=dict(color="red", dash="dash")))
-        fig.add_trace(go.Scatter(x=df_group.index, y=[lcl]*len(df_group), mode="lines", name="LCL", line=dict(color="red", dash="dash")))
+    st.write(f"Detected **{outliers.sum()} outliers** out of {len(df)} hourly records.")
 
-        if not outliers.empty:
-            fig.add_trace(go.Scatter(
-                x=outliers.index, y=outliers.values,
-                mode="markers", name="Outliers",
-                marker=dict(color="orange", size=7, symbol="circle")
-            ))
-
-        fig.update_layout(
-            title=f"SPC Analysis for {group} ({selected_area})",
-            xaxis_title="Time",
-            yaxis_title="Production (kWh)",
-            template="plotly_white",
-            height=450
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown("---")
-
-# ==========================================================
-# TAB 2 — LOF ANOMALY DETECTION
-# ==========================================================
+# ------------------- TAB 2: LOF ANOMALIES -------------------
 with tab2:
-    st.subheader("Anomaly Detection using LOF")
+    st.subheader("Anomaly Detection using Local Outlier Factor (LOF)")
     st.markdown("""
-    This tab applies **Local Outlier Factor (LOF)** to detect unusual production patterns.
-    LOF identifies anomalies based on how isolated a point is compared to its neighbors.
+    This tab detects **precipitation anomalies** using the Local Outlier Factor (LOF) method, 
+    which measures how isolated each observation is from its neighbors.
     """)
 
-    # User control for anomaly detection sensitivity
-    contamination = st.slider("Select proportion of anomalies (LOF contamination):", 0.001, 0.05, 0.01, step=0.001)
+    contamination = st.slider("Proportion of anomalies", 0.001, 0.05, 0.01, step=0.005)
+    neighbors = st.slider("Number of neighbors (LOF parameter)", 5, 50, 20, step=5)
 
-    for group in selected_groups:
-        df_group = df_filtered[df_filtered["production_group"] == group]["production_kwh"].to_frame()
+    df_lof = df[["precipitation"]].copy()
+    df_lof["precipitation_smooth"] = df_lof["precipitation"].rolling(window=3, center=True, min_periods=1).mean()
 
-        if len(df_group) < 10:
-            st.warning(f"⚠️ Not enough data for LOF analysis for {group}.")
-            continue
+    lof = LocalOutlierFactor(n_neighbors=neighbors, contamination=contamination)
+    df_lof["lof_label"] = lof.fit_predict(df_lof[["precipitation_smooth"]])
+    anomalies = df_lof[df_lof["lof_label"] == -1]
 
-        # --- Fit LOF Model ---
-        lof = LocalOutlierFactor(n_neighbors=20, contamination=contamination)
-        df_group["lof_outlier"] = lof.fit_predict(df_group[["production_kwh"]])
-        df_group["anomaly_score"] = -lof.negative_outlier_factor_
-        anomalies = df_group[df_group["lof_outlier"] == -1]
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=df["time"], y=df["precipitation"], mode="lines", name="Precipitation (mm)"))
+    fig2.add_trace(go.Scatter(x=df["time"].iloc[anomalies.index],
+                              y=df["precipitation"].iloc[anomalies.index],
+                              mode="markers", name="Anomalies", marker=dict(color="orange", size=6)))
+    fig2.update_layout(
+        title=f"LOF Precipitation Anomaly Detection for {selected_city} ({selected_year})",
+        xaxis_title="Time", yaxis_title="Precipitation (mm)", template="plotly_white"
+    )
+    st.plotly_chart(fig2, use_container_width=True)
 
-        # --- Display metrics ---
-        st.markdown(f"### 🔍 Production Group: {group}")
-        col1, col2 = st.columns(2)
-        col1.metric("Detected Anomalies", f"{len(anomalies)}")
-        col2.metric("Contamination Rate", f"{contamination * 100:.1f}%")
-
-        # --- Plot LOF chart ---
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_group.index, y=df_group["production_kwh"], mode="lines", name="Production"))
-
-        if not anomalies.empty:
-            fig.add_trace(go.Scatter(
-                x=anomalies.index, y=anomalies["production_kwh"],
-                mode="markers", name="Anomalies",
-                marker=dict(color="red", size=7, symbol="diamond")
-            ))
-
-        fig.update_layout(
-            title=f"LOF Anomaly Detection for {group} ({selected_area})",
-            xaxis_title="Time",
-            yaxis_title="Production (kWh)",
-            template="plotly_white",
-            height=450
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown("---")
+    st.write(f"Detected **{len(anomalies)} precipitation anomalies** out of {len(df)} hourly records.")
