@@ -10,14 +10,14 @@ from scipy.fft import dct, idct
 
 #Page setup
 st.set_page_config(page_title="Weather Analysis (SPC & LOF)", layout="wide")
-st.title("Weather Analysis: Outliers/SPC & Anomalies/LOF (ERA5 2021)")
+st.title("Outliers/SPC & Anomalies/LOF (ERA5 2021)")
 
 # Mapping price areas to cities 
-cities = {"NO1": {"city": "Oslo", "lat": 59.9139, "lon": 10.7522},
-    "NO2": {"city": "Kristiansand", "lat": 58.1467, "lon": 7.9956},
-    "NO3": {"city": "Trondheim", "lat": 63.4305, "lon": 10.3951},
-    "NO4": {"city": "Tromsø", "lat": 69.6492, "lon": 18.9553},
-    "NO5": {"city": "Bergen", "lat": 60.3942, "lon": 5.3221},}
+cities = {"NO1": {"city": "Oslo", "latitude": 59.9139, "longitude": 10.7522},
+        "NO2": {"city": "Kristiansand", "latitude": 58.1467, "longitude": 7.9956},
+        "NO3": {"city": "Trondheim", "latitude": 63.4305, "longitude": 10.3951},
+        "NO4": {"city": "Tromsø", "latitude": 69.6492, "longitude": 18.9553},
+        "NO5": {"city": "Bergen", "latitude": 60.3942, "longitude": 5.3221},}
 
 # Check selected price area
 if "selected_price_area" not in st.session_state:
