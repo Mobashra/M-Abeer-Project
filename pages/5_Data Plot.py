@@ -5,24 +5,16 @@ import plotly.graph_objects as go
 import calendar
 import requests
 
-# --- Mapping of price areas to city coordinates ---
-cities = {
-    "NO1": {"city": "Oslo", "latitude": 59.9139, "longitude": 10.7522},
+#Mapping of price areas to city coordinates
+cities = {"NO1": {"city": "Oslo", "latitude": 59.9139, "longitude": 10.7522},
     "NO2": {"city": "Kristiansand", "latitude": 58.1467, "longitude": 7.9956},
     "NO3": {"city": "Trondheim", "latitude": 63.4305, "longitude": 10.3951},
     "NO4": {"city": "Tromsø", "latitude": 69.6492, "longitude": 18.9553},
-    "NO5": {"city": "Bergen", "latitude": 60.3942, "longitude": 5.3221},
-}
+    "NO5": {"city": "Bergen", "latitude": 60.3942, "longitude": 5.3221},}
 
-variables = [
-    "temperature_2m",
-    "precipitation",
-    "wind_speed_10m",
-    "wind_gusts_10m",
-    "wind_direction_10m"
-]
+variables = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- Function to fetch Open-Meteo weather data ---
+# Function to fetch Open-Meteo weather data using era5 reanalysis
 @st.cache_data
 def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str = "UTC") -> pd.DataFrame:
     start_date = f"{year}-01-01"
@@ -32,8 +24,7 @@ def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str =
         f"https://archive-api.open-meteo.com/v1/era5"
         f"?latitude={lat}&longitude={lon}"
         f"&start_date={start_date}&end_date={end_date}"
-        f"&hourly={hourly_vars}&timezone={timezone}"
-    )
+        f"&hourly={hourly_vars}&timezone={timezone}")
     try:
         resp = requests.get(url, timeout=60)
         resp.raise_for_status()
@@ -49,12 +40,13 @@ def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str =
         st.error(f"Failed to fetch weather data: {e}")
         return pd.DataFrame()
 
-# --- Page content ---
-st.title("📈 Weather Time Series Plot (2021)")
-
-# Get selected price area from page 4
+# Page content
+st.title("Weather Variable Plot 2021")
+st.info("By default, the graph shows weather variables for price area NO1. If you want to see a different price area, select from 'Elhub API Data' page.")
+# Get selected price area from page 2
 selected_area = st.session_state.get("selected_price_area", "NO1")
 city_info = cities[selected_area]
+
 st.markdown(f"### Weather data for **{city_info['city']} ({selected_area})**")
 
 # Fetch weather data
@@ -64,16 +56,12 @@ if df.empty:
     st.warning("No weather data available for the selected price area.")
     st.stop()
 
-# --- Prepare month column for filtering ---
+# Prepare month column for filtering 
 df["Month"] = df["time"].dt.month
 months = list(calendar.month_name)[1:]  # ['January', 'February', ...]
 
 # Month slider
-selected_range = st.select_slider(
-    "Select month range",
-    options=months,
-    value=(months[0], months[0])
-)
+selected_range = st.select_slider("Select month range",options=months,value=(months[0], months[0]))
 
 # Filter based on month selection
 if isinstance(selected_range, tuple):
@@ -95,20 +83,10 @@ choice = st.selectbox("Select a column to plot", ["All"] + numeric_columns)
 fig = go.Figure()
 if choice == "All":
     for col in numeric_columns:
-        fig.add_trace(go.Scatter(
-            x=subset_plot.index,
-            y=subset_plot[col],
-            mode="lines",
-            name=col
-        ))
+        fig.add_trace(go.Scatter(x=subset_plot.index, y=subset_plot[col], mode="lines", name=col))
     plot_title = "Graph of all variables"
 else:
-    fig.add_trace(go.Scatter(
-        x=subset_plot.index,
-        y=subset_plot[choice],
-        mode="lines",
-        name=choice
-    ))
+    fig.add_trace(go.Scatter(x=subset_plot.index, y=subset_plot[choice], mode="lines", name=choice))
     plot_title = f"Graph of {choice}"
 
 # Add month range to title
@@ -118,13 +96,8 @@ else:
     plot_title += f" ({selected_range})"
 
 # Layout
-fig.update_layout(
-    title=plot_title,
-    xaxis_title="Time",
-    yaxis_title="Range of values of the variables",
-    template="plotly_white",
-    legend=dict(x=1, y=1, bgcolor="rgba(0,0,0,0)")
-)
+fig.update_layout(title=plot_title, xaxis_title="Time", yaxis_title="Range of values of the variables",
+    template="plotly_white", legend=dict(x=1, y=1, bgcolor="rgba(0,0,0,0)"))
 
 # Hover format
 fig.update_traces(hovertemplate='%{x|%b %d, %Y}<br>%{y}')

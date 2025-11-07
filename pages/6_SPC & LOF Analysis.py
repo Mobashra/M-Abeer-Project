@@ -6,16 +6,16 @@ import plotly.graph_objects as go
 from sklearn.neighbors import LocalOutlierFactor
 
 st.set_page_config(page_title="Production Analysis (SPC & LOF)", layout="wide")
-st.title("⚡ Production Analysis: Outliers/SPC & Anomalies/LOF")
+st.title("Production Analysis: Outliers/SPC & Anomalies/LOF")
 
-# --- Get selected area from session state ---
+# Get selected area from session state
 if "selected_price_area" not in st.session_state:
-    st.warning("⚠️ Please select a price area in the 'Elhub API Data' page first.")
+    st.warning("Please select a price area in the 'Elhub API Data' page first.")
     st.stop()
 
 selected_area = st.session_state["selected_price_area"]
 
-# --- Load Elhub production data ---
+# Load Elhub production data 
 @st.cache_data
 def load_elhub_data():
     df = pd.read_csv("elhub_2021_production.csv", parse_dates=["startTime"])
@@ -31,23 +31,22 @@ if df.empty:
     st.warning(f"No production data found for {selected_area}.")
     st.stop()
 
-# --- UI selectors ---
+# UI selectors 
 production_groups = sorted(df["production_group"].unique())
 selected_groups = st.multiselect(
     "Select production group(s):",
     options=production_groups,
-    default=production_groups
-)
+    default=production_groups)
 
 # Filter data
 df_filtered = df[df["production_group"].isin(selected_groups)].copy()
 df_filtered.set_index("startTime", inplace=True)
 df_filtered = df_filtered.sort_index()
 
-# --- Tabs ---
-tab1, tab2 = st.tabs(["📊 Outlier / SPC Analysis", "🚨 Anomaly / LOF Analysis"])
+# tabs for SPC and LOF
+tab1, tab2 = st.tabs(["SPC Analysis", "LOF Analysis"])
 
-# ---------------- Tab 1: SPC / Outlier ----------------
+# Tab 1: SPC / Outlier
 with tab1:
     st.subheader("Outlier & SPC Analysis")
     st.markdown("""
@@ -81,7 +80,7 @@ with tab1:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- Tab 2: LOF Anomaly ----------------
+# Tab 2: LOF Anomaly Detection
 with tab2:
     st.subheader("Anomaly Detection using LOF")
     st.markdown("""
