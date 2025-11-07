@@ -30,7 +30,6 @@ selected_area = st.session_state["selected_price_area"]
 city_info = cities[selected_area]
 st.subheader(f"Selected Price Area: {selected_area}")
 
-
 # Weather variables to fetch 
 variables = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
@@ -97,6 +96,17 @@ with tab_spc:
     lcl = mean_val - 3 * std_val
     outliers_idx = np.where((ts_hp > ucl) | (ts_hp < lcl))[0]
 
+    # Summary statistics
+    st.markdown("### SPC Summary Statistics")
+    st.write({
+        "Mean": round(mean_val, 2),
+        "Std Dev": round(std_val, 2),
+        "UCL": round(ucl, 2),
+        "LCL": round(lcl, 2),
+        "Number of Outliers": len(outliers_idx),
+        "Percentage of Outliers": f"{len(outliers_idx)/len(ts)*100:.2f}%"
+    })
+
     # Plot
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=ts.index, y=ts[selected_var], mode="lines", name=selected_var))
@@ -107,7 +117,6 @@ with tab_spc:
 
     fig.update_layout(title=f"SPC Analysis: {selected_var} ({selected_area})",xaxis_title="Time", yaxis_title=selected_var,template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
-    st.markdown(f"Detected outliers: {len(outliers_idx)}")
 
 # LOF Analysis tab 
 with tab_lof:
@@ -128,6 +137,17 @@ with tab_lof:
         ts_lof["anomaly_score"] = -lof.negative_outlier_factor_
         anomalies = ts_lof[ts_lof["lof_outlier"] == -1]
 
+        # Summary statistics
+        st.markdown("### LOF Summary Statistics")
+        st.write({
+            "Mean Anomaly Score": round(ts_lof["anomaly_score"].mean(), 3),
+            "Std Dev Anomaly Score": round(ts_lof["anomaly_score"].std(), 3),
+            "Min Anomaly Score": round(ts_lof["anomaly_score"].min(), 3),
+            "Max Anomaly Score": round(ts_lof["anomaly_score"].max(), 3),
+            "Number of Anomalies": len(anomalies),
+            "Percentage of Anomalies": f"{len(anomalies)/len(ts_lof)*100:.2f}%"
+        })
+
         # Plot
         fig_lof = go.Figure()
         fig_lof.add_trace(go.Scatter(x=ts_lof.index, y=ts_lof[selected_var_lof], mode="lines", name=selected_var_lof))
@@ -136,13 +156,12 @@ with tab_lof:
 
         fig_lof.update_layout(title=f"LOF Anomaly Detection: {selected_var_lof} ({selected_area})",xaxis_title="Time", yaxis_title=selected_var_lof,template="plotly_white")
         st.plotly_chart(fig_lof, use_container_width=True)
-        st.markdown(f"Detected anomalies: {len(anomalies)}")
 
 #Data source expander
 with st.expander("Data Sources"):
     st.markdown("""
     1. **Open-Meteo ERA5 Weather Reanalysis 2021**
-       - Source: [Open-Meteo API](https://open-meteo.com/en/docs)
-       - Variables: temperature_2m, precipitation, wind_speed_10m, wind_gusts_10m, wind_direction_10m
-       - Hourly data for the selected Norwegian city.
+       # Source: [Open-Meteo API](https://open-meteo.com/en/docs)
+       # Variables: temperature_2m, precipitation, wind_speed_10m, wind_gusts_10m, wind_direction_10m
+       # Hourly data for the selected Norwegian city.
     """)
