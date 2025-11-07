@@ -9,7 +9,7 @@ st.header("Welcome!")
 
 # Info box with introduction
 st.info("This interactive app lets you explore Norwegian electricity production and weather data for 2021.")
-st.badge(":violet-badge[Use the navigation on the left to move through the pages.]")
+st.markdown(":violet-badge[Use the navigation on the left to move through the pages.]")
 
 st.divider()
 
@@ -21,9 +21,9 @@ st.markdown("""
 🔗 [Elhub API](https://api.elhub.no)  
 - Provides hourly electricity **production data** for each Norwegian **price area** and **production group**.  
 
-** Open-Meteo ERA5 Weather Reanalysis**  
+**Open-Meteo ERA5 Weather Reanalysis**  
 🔗 [Open-Meteo API](https://open-meteo.com/en/docs)  
-- Offers hourly **weather parameters** such as temperature, precipitation, wind speed, gusts, and direction.  
+- Offers hourly weather parameters such as **temperature**, **precipitation**, **wind speed**, **gusts**, and **direction**.  
 """)
 
 
@@ -32,8 +32,6 @@ st.divider()
 # Tips for users
 st.subheader("User Guidance")
 st.success(
-    "- Start by selecting a **price area** on the 'Elhub API Data' page.\n"
+    "- Start by selecting a **price area** on the [Elhub API Data](https://m-abeer-project.streamlit.app/Elhub_API_Data) page.\n"
     "- Use the tabs in each page to explore different analyses.\n"
-    "- Hover over charts to see detailed values and trends.\n"
-    "- SPC and LOF analyses help detect unusual patterns in production data."
-)
+    "- Hover over charts to see detailed values and trends.")
