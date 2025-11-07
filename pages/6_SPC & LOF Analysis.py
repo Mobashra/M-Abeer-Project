@@ -8,31 +8,35 @@ from datetime import datetime
 import plotly.graph_objects as go
 from scipy.fft import dct, idct
 
-# --- Page setup ---
+#Page setup
 st.set_page_config(page_title="Weather Analysis (SPC & LOF)", layout="wide")
 st.title("Weather Analysis: Outliers/SPC & Anomalies/LOF (ERA5 2021)")
 
-# --- Mapping price areas to cities ---
-cities = {
-    "NO1": {"city": "Oslo", "lat": 59.9139, "lon": 10.7522},
+# Mapping price areas to cities 
+cities = {"NO1": {"city": "Oslo", "lat": 59.9139, "lon": 10.7522},
     "NO2": {"city": "Kristiansand", "lat": 58.1467, "lon": 7.9956},
     "NO3": {"city": "Trondheim", "lat": 63.4305, "lon": 10.3951},
     "NO4": {"city": "Tromsø", "lat": 69.6492, "lon": 18.9553},
-    "NO5": {"city": "Bergen", "lat": 60.3942, "lon": 5.3221},
-}
+    "NO5": {"city": "Bergen", "lat": 60.3942, "lon": 5.3221},}
 
-# --- Get selected price area from page 2 ---
-selected_area = st.session_state.get("selected_price_area", "NO1")
+# Check selected price area
+if "selected_price_area" not in st.session_state:
+    # If the user has not selected a price area previously, show warning and stop
+    st.warning("Please select a price area on the 'Elhub API Data' page first.")
+    st.stop()
+
+# Retrieve the selected price area from the session state
+selected_area = st.session_state["selected_price_area"]
 city_info = cities[selected_area]
-st.subheader(f"Selected Price Area: {selected_area} → {city_info['city']}")
+st.subheader(f"Selected Price Area: {selected_area}")
 
-# --- Weather variables to fetch ---
+
+# Weather variables to fetch 
 variables = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- Fetch ERA5 weather data (cached) ---
+# Fetch ERA5 weather data (cached)
 @st.cache_data(ttl=600)
 def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str = "Europe/Oslo") -> pd.DataFrame:
-    """Fetch hourly ERA5 weather data from Open-Meteo API"""
     start_date = f"{year}-01-01"
     end_date = f"{year}-12-31"
     hourly_vars = ",".join(variables)
@@ -57,23 +61,20 @@ def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str =
         st.error(f"Failed to fetch weather data: {e}")
         return pd.DataFrame()
 
-# --- Load data ---
-with st.spinner(f"Fetching weather data for {city_info['city']} (2021)..."):
-    df = fetch_weather_data(city_info["lat"], city_info["lon"], year=2021)
+#Load data
+df = fetch_weather_data(city_info["latitude"], city_info["longitude"], year=2021)
 
 if df.empty:
     st.warning("No weather data found for this price area.")
     st.stop()
 
-# --- Tabs for SPC and LOF ---
-tab_spc, tab_lof = st.tabs(["📊 SPC / Outliers", "⚠️ LOF / Anomalies"])
+# Tabs for SPC and LOF
+tab_spc, tab_lof = st.tabs(["SPC / Outliers", "LOF / Anomalies"])
 
-# --- SPC Analysis tab ---
+# SPC Analysis tab 
 with tab_spc:
     st.subheader("Statistical Process Control (SPC) Analysis")
-    st.markdown(
-        "Detect outliers in weather variables using high-pass filtered seasonal adjustment and mean±3*std control limits."
-    )
+    st.markdown("Detect outliers in weather variables using high-pass filtered seasonal adjustment and mean±3*std control limits.")
 
     # User selects variable
     selected_var = st.selectbox("Select weather variable for SPC:", variables, index=0)
@@ -83,7 +84,7 @@ with tab_spc:
     ts = ts.asfreq("h").interpolate(method="time")
 
     # High-pass filtering via DCT to remove seasonal trends
-    cutoff = st.slider("DCT frequency cutoff (0=keep all low freq):", 0, 2000, 1000)
+    cutoff = st.slider("DCT frequency cutoff (0 = keep all low freq):", 0, 2000, 1000)
     ts_values = ts[selected_var].values
     ts_dct = dct(ts_values, norm="ortho")
     ts_dct[:cutoff] = 0  # Remove low frequencies (seasonal)
@@ -102,25 +103,16 @@ with tab_spc:
     fig.add_trace(go.Scatter(x=ts.index, y=[ucl]*len(ts), mode="lines", name="UCL", line=dict(color="red", dash="dash")))
     fig.add_trace(go.Scatter(x=ts.index, y=[lcl]*len(ts), mode="lines", name="LCL", line=dict(color="red", dash="dash")))
     if len(outliers_idx) > 0:
-        fig.add_trace(go.Scatter(
-            x=ts.index[outliers_idx], y=ts[selected_var].iloc[outliers_idx],
-            mode="markers", name="Outliers", marker=dict(color="orange", size=6)
-        ))
+        fig.add_trace(go.Scatter(x=ts.index[outliers_idx], y=ts[selected_var].iloc[outliers_idx],mode="markers", name="Outliers", marker=dict(color="orange", size=6)))
 
-    fig.update_layout(
-        title=f"SPC Analysis: {selected_var} ({selected_area})",
-        xaxis_title="Time", yaxis_title=selected_var,
-        template="plotly_white"
-    )
+    fig.update_layout(title=f"SPC Analysis: {selected_var} ({selected_area})",xaxis_title="Time", yaxis_title=selected_var,template="plotly_white")
     st.plotly_chart(fig, use_container_width=True)
     st.markdown(f"Detected outliers: {len(outliers_idx)}")
 
-# --- LOF Analysis tab ---
+# LOF Analysis tab 
 with tab_lof:
     st.subheader("Local Outlier Factor (LOF) Anomaly Detection")
-    st.markdown(
-        "Detect anomalous points in weather variables using LOF (Isolation compared to neighbors)."
-    )
+    st.markdown("Detect anomalous points in weather variables using LOF (Isolation compared to neighbors).")
 
     # User selects variable
     selected_var_lof = st.selectbox("Select weather variable for LOF:", variables, index=0, key="lof_var")
@@ -140,20 +132,13 @@ with tab_lof:
         fig_lof = go.Figure()
         fig_lof.add_trace(go.Scatter(x=ts_lof.index, y=ts_lof[selected_var_lof], mode="lines", name=selected_var_lof))
         if not anomalies.empty:
-            fig_lof.add_trace(go.Scatter(
-                x=anomalies.index, y=anomalies[selected_var_lof],
-                mode="markers", name="Anomalies", marker=dict(color="red", size=6)
-            ))
+            fig_lof.add_trace(go.Scatter(x=anomalies.index, y=anomalies[selected_var_lof],mode="markers", name="Anomalies", marker=dict(color="red", size=6)))
 
-        fig_lof.update_layout(
-            title=f"LOF Anomaly Detection: {selected_var_lof} ({selected_area})",
-            xaxis_title="Time", yaxis_title=selected_var_lof,
-            template="plotly_white"
-        )
+        fig_lof.update_layout(title=f"LOF Anomaly Detection: {selected_var_lof} ({selected_area})",xaxis_title="Time", yaxis_title=selected_var_lof,template="plotly_white")
         st.plotly_chart(fig_lof, use_container_width=True)
         st.markdown(f"Detected anomalies: {len(anomalies)}")
 
-# --- Data source expander ---
+#Data source expander
 with st.expander("Data Sources"):
     st.markdown("""
     1. **Open-Meteo ERA5 Weather Reanalysis 2021**
