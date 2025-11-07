@@ -4,128 +4,160 @@ import pandas as pd
 import numpy as np
 import requests
 from sklearn.neighbors import LocalOutlierFactor
-from scipy.fftpack import dct, idct
+from datetime import datetime
 import plotly.graph_objects as go
+from scipy.fft import dct, idct
 
-# ------------------- PAGE CONFIG -------------------
-st.set_page_config(page_title="Weather Outlier & Anomaly Analysis", layout="wide")
-st.title("Weather Analysis: Outliers (SPC) & Anomalies (LOF)")
+# --- Page setup ---
+st.set_page_config(page_title="Weather Analysis (SPC & LOF)", layout="wide")
+st.title("Weather Analysis: Outliers/SPC & Anomalies/LOF (ERA5 2021)")
 
-# ------------------- CITY AND COORDINATES -------------------
-city_coords = {
-    "Oslo": (59.9139, 10.7522),
-    "Bergen": (60.39299, 5.32415),
-    "Trondheim": (63.4305, 10.3951),
-    "Tromsø": (69.6492, 18.9553),
-    "Kristiansand": (58.1467, 7.9956),
+# --- Mapping price areas to cities ---
+cities = {
+    "NO1": {"city": "Oslo", "lat": 59.9139, "lon": 10.7522},
+    "NO2": {"city": "Kristiansand", "lat": 58.1467, "lon": 7.9956},
+    "NO3": {"city": "Trondheim", "lat": 63.4305, "lon": 10.3951},
+    "NO4": {"city": "Tromsø", "lat": 69.6492, "lon": 18.9553},
+    "NO5": {"city": "Bergen", "lat": 60.3942, "lon": 5.3221},
 }
 
-# ------------------- USER INPUTS -------------------
-col1, col2 = st.columns(2)
-with col1:
-    selected_city = st.selectbox("Select City:", list(city_coords.keys()), index=0)
-with col2:
-    selected_year = st.selectbox("Select Year:", [2019, 2020, 2021, 2022, 2023, 2024], index=2)
+# --- Get selected price area from page 2 ---
+selected_area = st.session_state.get("selected_price_area", "NO1")
+city_info = cities[selected_area]
+st.subheader(f"Selected Price Area: {selected_area} → {city_info['city']}")
 
-lat, lon = city_coords[selected_city]
-st.info(f"📍 Selected City: **{selected_city}** (Lat: {lat}, Lon: {lon})")
+# --- Weather variables to fetch ---
+variables = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# ------------------- API DATA LOADING -------------------
-@st.cache_data(ttl=3600)
-def fetch_weather_data(lat, lon, year):
-    """Fetch hourly ERA5 reanalysis data from Open-Meteo API for a given city and year."""
+# --- Fetch ERA5 weather data (cached) ---
+@st.cache_data(ttl=600)
+def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str = "Europe/Oslo") -> pd.DataFrame:
+    """Fetch hourly ERA5 weather data from Open-Meteo API"""
+    start_date = f"{year}-01-01"
+    end_date = f"{year}-12-31"
+    hourly_vars = ",".join(variables)
     url = (
-        f"https://archive-api.open-meteo.com/v1/era5?"
-        f"latitude={lat}&longitude={lon}&start_date={year}-01-01&end_date={year}-12-31"
-        "&hourly=temperature_2m,precipitation"
-        "&timezone=Europe/Oslo"
+        f"https://archive-api.open-meteo.com/v1/era5"
+        f"?latitude={lat}&longitude={lon}"
+        f"&start_date={start_date}&end_date={end_date}"
+        f"&hourly={hourly_vars}&timezone={timezone}"
     )
-    response = requests.get(url)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        resp = requests.get(url, timeout=60)
+        resp.raise_for_status()
+        js = resp.json()
+        if "hourly" not in js or "time" not in js["hourly"]:
+            return pd.DataFrame()
+        hourly = js["hourly"]
+        df = pd.DataFrame({"time": pd.to_datetime(hourly["time"])})
+        for v in variables:
+            df[v] = hourly.get(v)
+        return df.sort_values("time").reset_index(drop=True)
+    except Exception as e:
+        st.error(f"Failed to fetch weather data: {e}")
+        return pd.DataFrame()
 
-    df = pd.DataFrame({
-        "time": pd.to_datetime(data["hourly"]["time"]),
-        "temperature": data["hourly"]["temperature_2m"],
-        "precipitation": data["hourly"]["precipitation"],
-    })
-    return df
-
-df = fetch_weather_data(lat, lon, selected_year)
+# --- Load data ---
+with st.spinner(f"Fetching weather data for {city_info['city']} (2021)..."):
+    df = fetch_weather_data(city_info["lat"], city_info["lon"], year=2021)
 
 if df.empty:
-    st.warning("No weather data retrieved. Please check API or parameters.")
+    st.warning("No weather data found for this price area.")
     st.stop()
 
-# ------------------- HELPER FUNCTIONS -------------------
-def high_pass_dct(temp_series, cutoff=50):
-    """Apply Direct Cosine Transform high-pass filter for seasonal adjustment."""
-    temp_dct = dct(temp_series, norm='ortho')
-    temp_dct[:cutoff] = 0  # remove low-frequency components (trend/seasonal)
-    return idct(temp_dct, norm='ortho')
+# --- Tabs for SPC and LOF ---
+tab_spc, tab_lof = st.tabs(["📊 SPC / Outliers", "⚠️ LOF / Anomalies"])
 
-# ------------------- TAB LAYOUT -------------------
-tab1, tab2 = st.tabs(["Outlier Detection (SPC)", "Anomaly Detection (LOF)"])
+# --- SPC Analysis tab ---
+with tab_spc:
+    st.subheader("Statistical Process Control (SPC) Analysis")
+    st.markdown(
+        "Detect outliers in weather variables using high-pass filtered seasonal adjustment and mean±3*std control limits."
+    )
 
-# ------------------- TAB 1: SPC OUTLIERS -------------------
-with tab1:
-    st.subheader("Outlier Detection using Statistical Process Control (SPC)")
-    st.markdown("""
-    This analysis detects **temperature outliers** using a high-pass filtered signal (DCT) 
-    and control limits based on robust statistics.
-    """)
+    # User selects variable
+    selected_var = st.selectbox("Select weather variable for SPC:", variables, index=0)
 
-    cutoff = st.slider("Frequency cut-off for DCT (lower = more smoothing)", 10, 200, 50, step=10)
-    std_mult = st.slider("Number of standard deviations for control limits", 1.0, 4.0, 3.0, step=0.5)
+    # Prepare time series
+    ts = df[["time", selected_var]].dropna().set_index("time")
+    ts = ts.asfreq("h").interpolate(method="time")
 
-    # Compute seasonally adjusted temperature
-    satv = high_pass_dct(df["temperature"].values, cutoff=cutoff)
-    satv_mean, satv_std = np.mean(satv), np.std(satv)
-    upper_limit, lower_limit = satv_mean + std_mult * satv_std, satv_mean - std_mult * satv_std
+    # High-pass filtering via DCT to remove seasonal trends
+    cutoff = st.slider("DCT frequency cutoff (0=keep all low freq):", 0, 2000, 1000)
+    ts_values = ts[selected_var].values
+    ts_dct = dct(ts_values, norm="ortho")
+    ts_dct[:cutoff] = 0  # Remove low frequencies (seasonal)
+    ts_hp = idct(ts_dct, norm="ortho")  # High-pass filtered
 
-    outliers = (satv > upper_limit) | (satv < lower_limit)
+    # SPC limits
+    mean_val = np.mean(ts_hp)
+    std_val = np.std(ts_hp)
+    ucl = mean_val + 3 * std_val
+    lcl = mean_val - 3 * std_val
+    outliers_idx = np.where((ts_hp > ucl) | (ts_hp < lcl))[0]
 
     # Plot
-    fig1 = go.Figure()
-    fig1.add_trace(go.Scatter(x=df["time"], y=df["temperature"], mode="lines", name="Temperature (°C)"))
-    fig1.add_trace(go.Scatter(x=df["time"][outliers], y=df["temperature"][outliers],
-                              mode="markers", name="Outliers", marker=dict(color="red", size=5)))
-    fig1.add_hline(y=np.mean(df["temperature"]), line_dash="dot", annotation_text="Mean Temp")
-    fig1.update_layout(
-        title=f"SPC Outlier Detection for {selected_city} ({selected_year})",
-        xaxis_title="Time", yaxis_title="Temperature (°C)", template="plotly_white"
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=ts.index, y=ts[selected_var], mode="lines", name=selected_var))
+    fig.add_trace(go.Scatter(x=ts.index, y=[ucl]*len(ts), mode="lines", name="UCL", line=dict(color="red", dash="dash")))
+    fig.add_trace(go.Scatter(x=ts.index, y=[lcl]*len(ts), mode="lines", name="LCL", line=dict(color="red", dash="dash")))
+    if len(outliers_idx) > 0:
+        fig.add_trace(go.Scatter(
+            x=ts.index[outliers_idx], y=ts[selected_var].iloc[outliers_idx],
+            mode="markers", name="Outliers", marker=dict(color="orange", size=6)
+        ))
+
+    fig.update_layout(
+        title=f"SPC Analysis: {selected_var} ({selected_area})",
+        xaxis_title="Time", yaxis_title=selected_var,
+        template="plotly_white"
     )
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown(f"Detected outliers: {len(outliers_idx)}")
 
-    st.write(f"Detected **{outliers.sum()} outliers** out of {len(df)} hourly records.")
+# --- LOF Analysis tab ---
+with tab_lof:
+    st.subheader("Local Outlier Factor (LOF) Anomaly Detection")
+    st.markdown(
+        "Detect anomalous points in weather variables using LOF (Isolation compared to neighbors)."
+    )
 
-# ------------------- TAB 2: LOF ANOMALIES -------------------
-with tab2:
-    st.subheader("Anomaly Detection using Local Outlier Factor (LOF)")
+    # User selects variable
+    selected_var_lof = st.selectbox("Select weather variable for LOF:", variables, index=0, key="lof_var")
+    ts_lof = df[["time", selected_var_lof]].dropna().set_index("time")
+    ts_lof = ts_lof.asfreq("h").interpolate(method="time")
+
+    if len(ts_lof) < 20:
+        st.warning("Not enough data points for LOF analysis.")
+    else:
+        # Fit LOF
+        lof = LocalOutlierFactor(n_neighbors=20, contamination=0.01)
+        ts_lof["lof_outlier"] = lof.fit_predict(ts_lof[[selected_var_lof]])
+        ts_lof["anomaly_score"] = -lof.negative_outlier_factor_
+        anomalies = ts_lof[ts_lof["lof_outlier"] == -1]
+
+        # Plot
+        fig_lof = go.Figure()
+        fig_lof.add_trace(go.Scatter(x=ts_lof.index, y=ts_lof[selected_var_lof], mode="lines", name=selected_var_lof))
+        if not anomalies.empty:
+            fig_lof.add_trace(go.Scatter(
+                x=anomalies.index, y=anomalies[selected_var_lof],
+                mode="markers", name="Anomalies", marker=dict(color="red", size=6)
+            ))
+
+        fig_lof.update_layout(
+            title=f"LOF Anomaly Detection: {selected_var_lof} ({selected_area})",
+            xaxis_title="Time", yaxis_title=selected_var_lof,
+            template="plotly_white"
+        )
+        st.plotly_chart(fig_lof, use_container_width=True)
+        st.markdown(f"Detected anomalies: {len(anomalies)}")
+
+# --- Data source expander ---
+with st.expander("Data Sources"):
     st.markdown("""
-    This tab detects **precipitation anomalies** using the Local Outlier Factor (LOF) method, 
-    which measures how isolated each observation is from its neighbors.
+    1. **Open-Meteo ERA5 Weather Reanalysis 2021**
+       - Source: [Open-Meteo API](https://open-meteo.com/en/docs)
+       - Variables: temperature_2m, precipitation, wind_speed_10m, wind_gusts_10m, wind_direction_10m
+       - Hourly data for the selected Norwegian city.
     """)
-
-    contamination = st.slider("Proportion of anomalies", 0.001, 0.05, 0.01, step=0.005)
-    neighbors = st.slider("Number of neighbors (LOF parameter)", 5, 50, 20, step=5)
-
-    df_lof = df[["precipitation"]].copy()
-    df_lof["precipitation_smooth"] = df_lof["precipitation"].rolling(window=3, center=True, min_periods=1).mean()
-
-    lof = LocalOutlierFactor(n_neighbors=neighbors, contamination=contamination)
-    df_lof["lof_label"] = lof.fit_predict(df_lof[["precipitation_smooth"]])
-    anomalies = df_lof[df_lof["lof_label"] == -1]
-
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=df["time"], y=df["precipitation"], mode="lines", name="Precipitation (mm)"))
-    fig2.add_trace(go.Scatter(x=df["time"].iloc[anomalies.index],
-                              y=df["precipitation"].iloc[anomalies.index],
-                              mode="markers", name="Anomalies", marker=dict(color="orange", size=6)))
-    fig2.update_layout(
-        title=f"LOF Precipitation Anomaly Detection for {selected_city} ({selected_year})",
-        xaxis_title="Time", yaxis_title="Precipitation (mm)", template="plotly_white"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-    st.write(f"Detected **{len(anomalies)} precipitation anomalies** out of {len(df)} hourly records.")
