@@ -121,7 +121,5 @@ with col2:
 # Expander for data source
 with st.expander("Data Source"):
     # Including clickable link to Elhub API for reference
-    st.markdown("""
-    **Source:** Data retrieved from the [Elhub API](https://api.elhub.no) and stored in MongoDB.  
-    The charts above show electricity production by price area and production group, aggregated by date.
-    """)
+    st.markdown("""**Source:** Data retrieved from the [Elhub API](https://api.elhub.no) and stored in MongoDB.  
+    The charts above show electricity production by price area and production group, aggregated by date.""")

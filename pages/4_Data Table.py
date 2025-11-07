@@ -2,29 +2,23 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from functools import lru_cache
+#from functools import lru_cache
+import requests
 
-# --- Mapping of price areas to city coordinates ---
-cities = {
-    "NO1": {"city": "Oslo", "latitude": 59.9139, "longitude": 10.7522},
-    "NO2": {"city": "Kristiansand", "latitude": 58.1467, "longitude": 7.9956},
-    "NO3": {"city": "Trondheim", "latitude": 63.4305, "longitude": 10.3951},
-    "NO4": {"city": "Tromsø", "latitude": 69.6492, "longitude": 18.9553},
-    "NO5": {"city": "Bergen", "latitude": 60.3942, "longitude": 5.3221},
-}
+# Mapping of price areas to city coordinates
+cities = {"NO1": {"city": "Oslo", "latitude": 59.9139, "longitude": 10.7522},
+        "NO2": {"city": "Kristiansand", "latitude": 58.1467, "longitude": 7.9956},
+        "NO3": {"city": "Trondheim", "latitude": 63.4305, "longitude": 10.3951},
+        "NO4": {"city": "Tromsø", "latitude": 69.6492, "longitude": 18.9553},
+        "NO5": {"city": "Bergen", "latitude": 60.3942, "longitude": 5.3221},}
 
-variables = [
-    "temperature_2m",
-    "precipitation",
-    "wind_speed_10m",
-    "wind_gusts_10m",
-    "wind_direction_10m"
-]
+# List of weather variables to fetch
+variables = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- Function to fetch weather data from Open-Meteo ---
+# Function to fetch weather data from Open-Meteo API using era5 reanalysis
 @st.cache_data
-def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str = "UTC") -> pd.DataFrame:
-    import requests
+def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str = "Europe/Oslo") -> pd.DataFrame:
+    
     start_date = f"{year}-01-01"
     end_date = f"{year}-12-31"
     hourly_vars = ",".join(variables)
@@ -32,8 +26,7 @@ def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str =
         f"https://archive-api.open-meteo.com/v1/era5"
         f"?latitude={lat}&longitude={lon}"
         f"&start_date={start_date}&end_date={end_date}"
-        f"&hourly={hourly_vars}&timezone={timezone}"
-    )
+        f"&hourly={hourly_vars}&timezone={timezone}")
     try:
         resp = requests.get(url, timeout=60)
         resp.raise_for_status()
@@ -49,10 +42,10 @@ def fetch_weather_data(lat: float, lon: float, year: int = 2021, timezone: str =
         st.error(f"Failed to fetch weather data: {e}")
         return pd.DataFrame()
 
-# --- Page content ---
-st.title("📊 Weather Data Table (2021)")
+# Page content
+st.title("Weather Data Table (2021)")
 
-# Get selected price area from page 4
+# Get selected price area from page 2
 selected_area = st.session_state.get("selected_price_area", "NO1")
 city_info = cities[selected_area]
 
@@ -72,17 +65,7 @@ df["month"] = df["time"].dt.month
 january = df[df["month"] == 1]
 
 # Build summary DataFrame with sparkline trend for January
-summary = pd.DataFrame({
-    "Variable": variables,
-    "January Trend": [january[var].tolist() for var in variables]
-})
+summary = pd.DataFrame({ "Variable": variables,"January Trend": [january[var].tolist() for var in variables]})
 
 st.markdown("---")
-st.dataframe(
-    summary,
-    column_config={
-        "January Trend": st.column_config.LineChartColumn("January Trend")
-    },
-    hide_index=True,
-    use_container_width=True
-)
+st.dataframe(summary,column_config={"January Trend": st.column_config.LineChartColumn("January Trend")}, hide_index=True, use_container_width=True)
