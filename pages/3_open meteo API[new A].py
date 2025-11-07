@@ -5,7 +5,6 @@ from pymongo import MongoClient
 from statsmodels.tsa.seasonal import STL
 from scipy.signal import spectrogram
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 # --- Streamlit page setup ---
 st.set_page_config(page_title="Elhub Analysis (STL & Spectrogram)", layout="wide")
@@ -84,51 +83,22 @@ with tab_stl:
         st.info("Performing STL decomposition with weekly periodicity (period=24×7).")
         stl = STL(df_ts, period=24 * 7, robust=True).fit()
         
-       
-
-# --- Create Plotly 4-row subplot ---
-        fig = make_subplots(
-            rows=4, cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.05,
-            subplot_titles=(
-                "Original Series",
-                "Trend Component",
-                "Seasonal Component",
-                "Residuals"
-            )
-        )
-
-        fig.add_trace(go.Scatter(x=df_ts.index, y=df_ts, name="Original", line=dict(width=1.2, color="royalblue")), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_ts.index, y=stl.trend, name="Trend", line=dict(width=1.2, color="darkorange")), row=2, col=1)
-        fig.add_trace(go.Scatter(x=df_ts.index, y=stl.seasonal, name="Seasonal", line=dict(width=1.2, color="green")), row=3, col=1)
-        fig.add_trace(go.Scatter(x=df_ts.index, y=stl.resid, name="Residuals", line=dict(width=1.2, color="crimson")), row=4, col=1)
+        # Plotly subplots
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_ts.index, y=df_ts, name="Original", line=dict(width=1)))
+        fig.add_trace(go.Scatter(x=df_ts.index, y=stl.trend, name="Trend", line=dict(width=2)))
+        fig.add_trace(go.Scatter(x=df_ts.index, y=stl.seasonal, name="Seasonal", line=dict(width=1, dash="dot")))
+        fig.add_trace(go.Scatter(x=df_ts.index, y=stl.resid, name="Residual", line=dict(width=1, dash="dash")))
 
         fig.update_layout(
-            height=900,
-            title_text=f"STL Decomposition – {selected_group} ({selected_area}, 2021)",
-            showlegend=False,
+            title=f"STL Decomposition – {selected_group} ({selected_area}, 2021)",
+            xaxis_title="Time",
+            yaxis_title="Production (MWh)",
             template="plotly_white",
-            margin=dict(t=80, b=40)
+            legend=dict(x=0, y=1, bgcolor="rgba(0,0,0,0)")
         )
 
-        fig.update_xaxes(title_text="Time", row=4, col=1)
-        fig.update_yaxes(title_text="Production (MWh)", row=1, col=1)
-
         st.plotly_chart(fig, use_container_width=True)
-
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-
 
 # ====================================================================================
 # TAB 2: SPECTROGRAM
