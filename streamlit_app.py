@@ -9,7 +9,7 @@ st.header("Welcome!")
 
 # Info box with introduction
 st.info("This interactive app lets you explore Norwegian electricity production and weather data for 2021.")
-st.info(":violet-badge[Use the navigation on the left to move through the pages.]")
+st.badge(":violet-badge[Use the navigation on the left to move through the pages.]")
 
 st.divider()
 
