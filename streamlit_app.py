@@ -23,19 +23,26 @@ with col1:
 with col2:
     days = st.slider("Days to Aggregate (from latest date)", 7, 365, 30)
 
+
+
 # 3. Map Logic
 max_date = df['date'].max()
-# Filter for time and group
 mask = (df['date'] >= max_date - pd.Timedelta(days=days)) & (df['production_group'] == selected_group)
 df_map = df[mask].groupby('price_area')['production_mwh'].mean().reset_index()
+
+# --- CRITICAL FIX START ---
+# Your GeoJSON has "NO 1", "NO 2"... but DataFrame has "NO1", "NO2"...
+# We must insert a space into the DataFrame values to match the GeoJSON exactly.
+df_map['price_area_map'] = df_map['price_area'].str.replace("NO", "NO ")
+# --- CRITICAL FIX END ---
 
 st.subheader(f"Average {selected_group} Production (Last {days} Days)")
 
 fig = px.choropleth_mapbox(
     df_map, 
     geojson=geojson, 
-    locations='price_area', 
-    featureidkey="properties.ElSpotOmr", # <--- CHECK THIS KEY IN YOUR GEOJSON FILE
+    locations='price_area_map', # Use the new column with the space
+    featureidkey="properties.ElSpotOmr", # Updated to match your JSON key
     color='production_mwh', 
     color_continuous_scale="Viridis", 
     mapbox_style="carto-positron",
@@ -44,6 +51,8 @@ fig = px.choropleth_mapbox(
     opacity=0.5
 )
 fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+
+
 
 # 4. Capture Click
 event = st.plotly_chart(fig, on_select="rerun", selection_mode="points", use_container_width=True)
