@@ -4,7 +4,7 @@ import requests
 import json
 from pymongo import MongoClient
 
-# --- CONFIGURATION ---
+# Centralized City Data
 CITIES = {
     "NO1": {"city": "Oslo", "latitude": 59.9139, "longitude": 10.7522},
     "NO2": {"city": "Kristiansand", "latitude": 58.1467, "longitude": 7.9956},
@@ -31,13 +31,12 @@ def get_mongo_collection():
 @st.cache_data(ttl=600)
 def load_elhub_data(year_filter=None):
     """
-    Loads production data. 
-    If year_filter is set (e.g., 2021), it keeps only that year to match your old logic.
+    Loads production data. Handles mixed date formats (String vs Milliseconds).
     """
     coll = get_mongo_collection()
     if coll is None: return pd.DataFrame()
 
-    # Fetch data (excluding _id to save memory)
+    # Fetch data excluding _id
     data = list(coll.find({}, {"_id": 0}))
     df = pd.DataFrame(data)
 
@@ -49,11 +48,27 @@ def load_elhub_data(year_filter=None):
     if "price_area" in df.columns:
         df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
     
-    # Handle Dates (UTC -> Oslo)
-    if "start_time" in df.columns:
-        df['date'] = pd.to_datetime(df['start_time'], unit='ms').dt.tz_localize("UTC").dt.tz_convert("Europe/Oslo")
-    elif "startTime" in df.columns:
-        df['date'] = pd.to_datetime(df['startTime'], utc=True).dt.tz_convert("Europe/Oslo")
+    # --- ROBUST DATE HANDLING (FIX FOR MIXED TYPES) ---
+    # Identify which column holds the date
+    date_col = "start_time" if "start_time" in df.columns else "startTime"
+    
+    if date_col in df.columns:
+        # 1. Identify numeric rows (Milliseconds) vs String rows (ISO format)
+        # 'coerce' turns strings into NaN, so we know which ones are numbers
+        is_numeric = pd.to_numeric(df[date_col], errors='coerce').notna()
+        
+        # 2. Convert Strings (New Data)
+        # We use utc=True to standardize everything to UTC first
+        if (~is_numeric).any():
+            df.loc[~is_numeric, 'date'] = pd.to_datetime(df.loc[~is_numeric, date_col], utc=True, errors='coerce')
+            
+        # 3. Convert Numbers (Old Data)
+        # We explicitly treat these as milliseconds
+        if is_numeric.any():
+            df.loc[is_numeric, 'date'] = pd.to_datetime(df.loc[is_numeric, date_col], unit='ms', utc=True)
+            
+        # 4. Final Conversion to Oslo Time
+        df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
 
     # Standardize value column name
     if "value" in df.columns and "production_mwh" not in df.columns:
@@ -61,7 +76,7 @@ def load_elhub_data(year_filter=None):
     elif "quantityKwh" in df.columns:
         df.rename(columns={'quantityKwh': 'production_mwh'}, inplace=True)
 
-    # Optional Year Filter (To preserve your 2021 specific pages)
+    # Optional Year Filter
     if year_filter:
         df = df[df["date"].dt.year == year_filter]
 
@@ -97,5 +112,10 @@ def load_geojson():
         with open('elspot_areas.geojson', 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        st.error("File 'elspot_areas.geojson' not found. Please download it from NVE.")
-        return None
+        # Try json extension just in case
+        try:
+            with open('elspot_areas.json', 'r') as f:
+                return json.load(f)
+        except:
+            st.error("File 'elspot_areas.geojson' not found. Please download it from NVE.")
+            return None
