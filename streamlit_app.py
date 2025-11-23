@@ -1,7 +1,7 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
-import utils  # Imports from utils.py in the same folder
+import utils
 
 st.set_page_config(page_title="Norwegian Energy Atlas", layout="wide")
 
@@ -9,11 +9,28 @@ st.title("🇳🇴 Regional Energy Overview")
 st.info("Select a region on the map to set the location for Snow Drift & Weather Analysis.")
 
 # 1. Load Data
-df = utils.load_elhub_data()
-geojson = utils.load_geojson()
+with st.spinner("Loading data..."):
+    df = utils.load_elhub_data()
+    geojson = utils.load_geojson()
 
+# --- DEBUGGING BLOCK (Add this!) ---
+if df.empty:
+    st.error("❌ **CRITICAL ERROR:** Production Data is empty.")
+    st.write("Possible reasons:")
+    st.write("1. MongoDB connection failed (Check `.streamlit/secrets.toml`).")
+    st.write("2. The database collection is empty.")
+    st.write("3. `utils.py` is not filtering the data correctly.")
+
+if not geojson:
+    st.error("❌ **CRITICAL ERROR:** GeoJSON file not found.")
+    st.write("Make sure `elspot_areas.geojson` is inside the main project folder (next to Home.py).")
+
+# Stop only after showing the error
 if df.empty or not geojson:
     st.stop()
+# -----------------------------------
+
+# 2. Controls (The rest of your code continues here...)
 
 # 2. Controls
 col1, col2 = st.columns(2)
