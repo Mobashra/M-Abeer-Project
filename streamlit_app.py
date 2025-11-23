@@ -35,7 +35,7 @@ fig = px.choropleth_mapbox(
     df_map, 
     geojson=geojson, 
     locations='price_area', 
-    featureidkey="properties.omrNr", # <--- CHECK THIS KEY IN YOUR GEOJSON FILE
+    featureidkey="properties.ElSpotOmr", # <--- CHECK THIS KEY IN YOUR GEOJSON FILE
     color='production_mwh', 
     color_continuous_scale="Viridis", 
     mapbox_style="carto-positron",
