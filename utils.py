@@ -33,22 +33,21 @@ def get_mongo_collection():
 def load_map_data(days_back=30, selected_group="hydro"):
     """
     Optimized loader for the Home Page Map.
-    Filters by group on the server to avoid downloading 1 million rows.
+    Filters relative to the DATA's max date, not today's date.
     """
     coll = get_mongo_collection()
     if coll is None: return pd.DataFrame()
 
     # 1. Server-Side Filtering
-    # We only fetch the specific group requested.
-    query = {"production_group": selected_group}
+    # Use a regex to be case-insensitive (matches "Hydro", "hydro", "HYDRO")
+    query = {"production_group": {"$regex": f"^{selected_group}$", "$options": "i"}}
     
-    # We only fetch necessary columns
     projection = {
         "price_area": 1, "start_time": 1, "startTime": 1, 
         "value": 1, "quantityKwh": 1, "_id": 0
     }
     
-    # 2. Limit Result Size (Fetch last 100k rows to stay safe)
+    # 2. Fetch latest 100k rows for this group
     cursor = coll.find(query, projection).sort("_id", -1).limit(100000)
     data = list(cursor)
     
@@ -70,19 +69,22 @@ def load_map_data(days_back=30, selected_group="hydro"):
     df['temp_date'] = pd.to_numeric(df[date_col], errors='coerce')
     mask_num = df['temp_date'].notna()
     
-    # Convert numeric rows (ms)
     if mask_num.any():
         df.loc[mask_num, 'date'] = pd.to_datetime(df.loc[mask_num, 'temp_date'], unit='ms', utc=True)
     
-    # Convert string rows (ISO)
     if (~mask_num).any():
         df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
 
     df.drop(columns=['temp_date'], inplace=True)
     df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
 
-    # 5. Final Time Filter
-    cutoff_date = pd.Timestamp.now(tz="Europe/Oslo") - pd.Timedelta(days=days_back)
+    # 5. FIXED TIME FILTER (Relative to Data, not Today)
+    # Find the latest date actually present in this chunk of data
+    max_data_date = df['date'].max()
+    
+    # Calculate cutoff relative to THAT date
+    cutoff_date = max_data_date - pd.Timedelta(days=days_back)
+    
     mask_time = df['date'] >= cutoff_date
     
     return df[mask_time]
