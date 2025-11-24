@@ -3,8 +3,9 @@ import pandas as pd
 import requests
 import json
 from pymongo import MongoClient
+from datetime import datetime, timedelta
 
-# Centralized City Data
+# --- 1. CONSTANTS ---
 CITIES = {
     "NO1": {"city": "Oslo", "latitude": 59.9139, "longitude": 10.7522},
     "NO2": {"city": "Kristiansand", "latitude": 58.1467, "longitude": 7.9956},
@@ -15,7 +16,7 @@ CITIES = {
 
 WEATHER_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- DATABASE CONNECTION ---
+# --- 2. DATABASE CONNECTION ---
 @st.cache_resource
 def get_mongo_collection():
     """Connects to MongoDB using secrets.toml"""
@@ -27,11 +28,76 @@ def get_mongo_collection():
         st.error(f"MongoDB Connection Error: {e}")
         return None
 
-# --- DATA LOADERS ---
+# --- 3. OPTIMIZED DATA LOADER (FOR MAP) ---
+@st.cache_data(ttl=3600)
+def load_map_data(days_back=30, selected_group="hydro"):
+    """
+    Optimized loader for the Home Page Map.
+    Filters by group on the server to avoid downloading 1 million rows.
+    """
+    coll = get_mongo_collection()
+    if coll is None: return pd.DataFrame()
+
+    # 1. Server-Side Filtering
+    # We only fetch the specific group requested (e.g., "wind").
+    # This reduces data volume by ~80% immediately.
+    query = {"production_group": selected_group}
+    
+    # We only fetch necessary columns (No need for everything)
+    projection = {
+        "price_area": 1, "start_time": 1, "startTime": 1, 
+        "value": 1, "quantityKwh": 1, "_id": 0
+    }
+    
+    # 2. Limit Result Size
+    # 365 days * 24 hours * 5 areas = ~43,800 rows.
+    # We fetch the last 100,000 rows to be safe for a full year history.
+    cursor = coll.find(query, projection).sort("_id", -1).limit(100000)
+    data = list(cursor)
+    
+    df = pd.DataFrame(data)
+    if df.empty: return df
+
+    # 3. Standardize Columns
+    if "price_area" in df.columns:
+        df['price_area'] = df['price_area'].astype(str)
+        
+    if "value" in df.columns:
+        df.rename(columns={'value': 'production_mwh'}, inplace=True)
+    elif "quantityKwh" in df.columns:
+        df.rename(columns={'quantityKwh': 'production_mwh'}, inplace=True)
+
+    # 4. Robust Date Conversion (Handles Mixed Types)
+    date_col = "start_time" if "start_time" in df.columns else "startTime"
+    
+    # Fast conversion: coerce errors turns strings to NaT, numbers to NaT depending on format
+    # First try numeric (ms)
+    df['temp_date'] = pd.to_numeric(df[date_col], errors='coerce')
+    
+    mask_num = df['temp_numeric_date'] = df['temp_date'].notna()
+    
+    # Convert numeric rows
+    if mask_num.any():
+        df.loc[mask_num, 'date'] = pd.to_datetime(df.loc[mask_num, 'temp_date'], unit='ms', utc=True)
+    
+    # Convert string rows
+    if (~mask_num).any():
+        df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
+
+    df.drop(columns=['temp_date'], inplace=True)
+    df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+
+    # 5. Final Time Filter
+    cutoff_date = pd.Timestamp.now(tz="Europe/Oslo") - pd.Timedelta(days=days_back)
+    mask_time = df['date'] >= cutoff_date
+    
+    return df[mask_time]
+
+# --- 4. FULL DATA LOADER (LEGACY / DEEP ANALYSIS) ---
 @st.cache_data(ttl=600)
 def load_elhub_data(year_filter=None):
     """
-    Loads production data. Handles mixed date formats (String vs Milliseconds).
+    Loads ALL data. Use carefully! Ideally use load_map_data where possible.
     """
     coll = get_mongo_collection()
     if coll is None: return pd.DataFrame()
@@ -48,26 +114,15 @@ def load_elhub_data(year_filter=None):
     if "price_area" in df.columns:
         df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
     
-    # --- ROBUST DATE HANDLING (FIX FOR MIXED TYPES) ---
-    # Identify which column holds the date
+    # --- ROBUST DATE HANDLING ---
     date_col = "start_time" if "start_time" in df.columns else "startTime"
     
     if date_col in df.columns:
-        # 1. Identify numeric rows (Milliseconds) vs String rows (ISO format)
-        # 'coerce' turns strings into NaN, so we know which ones are numbers
         is_numeric = pd.to_numeric(df[date_col], errors='coerce').notna()
-        
-        # 2. Convert Strings (New Data)
-        # We use utc=True to standardize everything to UTC first
         if (~is_numeric).any():
             df.loc[~is_numeric, 'date'] = pd.to_datetime(df.loc[~is_numeric, date_col], utc=True, errors='coerce')
-            
-        # 3. Convert Numbers (Old Data)
-        # We explicitly treat these as milliseconds
         if is_numeric.any():
             df.loc[is_numeric, 'date'] = pd.to_datetime(df.loc[is_numeric, date_col], unit='ms', utc=True)
-            
-        # 4. Final Conversion to Oslo Time
         df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
 
     # Standardize value column name
@@ -82,6 +137,7 @@ def load_elhub_data(year_filter=None):
 
     return df
 
+# --- 5. API & GEOJSON ---
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
     """Fetches ERA5 weather data."""
