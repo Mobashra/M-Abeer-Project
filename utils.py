@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import json
 from pymongo import MongoClient
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 # --- 1. CONSTANTS ---
 CITIES = {
@@ -39,19 +39,16 @@ def load_map_data(days_back=30, selected_group="hydro"):
     if coll is None: return pd.DataFrame()
 
     # 1. Server-Side Filtering
-    # We only fetch the specific group requested (e.g., "wind").
-    # This reduces data volume by ~80% immediately.
+    # We only fetch the specific group requested.
     query = {"production_group": selected_group}
     
-    # We only fetch necessary columns (No need for everything)
+    # We only fetch necessary columns
     projection = {
         "price_area": 1, "start_time": 1, "startTime": 1, 
         "value": 1, "quantityKwh": 1, "_id": 0
     }
     
-    # 2. Limit Result Size
-    # 365 days * 24 hours * 5 areas = ~43,800 rows.
-    # We fetch the last 100,000 rows to be safe for a full year history.
+    # 2. Limit Result Size (Fetch last 100k rows to stay safe)
     cursor = coll.find(query, projection).sort("_id", -1).limit(100000)
     data = list(cursor)
     
@@ -67,20 +64,17 @@ def load_map_data(days_back=30, selected_group="hydro"):
     elif "quantityKwh" in df.columns:
         df.rename(columns={'quantityKwh': 'production_mwh'}, inplace=True)
 
-    # 4. Robust Date Conversion (Handles Mixed Types)
+    # 4. Robust Date Conversion
     date_col = "start_time" if "start_time" in df.columns else "startTime"
     
-    # Fast conversion: coerce errors turns strings to NaT, numbers to NaT depending on format
-    # First try numeric (ms)
     df['temp_date'] = pd.to_numeric(df[date_col], errors='coerce')
+    mask_num = df['temp_date'].notna()
     
-    mask_num = df['temp_numeric_date'] = df['temp_date'].notna()
-    
-    # Convert numeric rows
+    # Convert numeric rows (ms)
     if mask_num.any():
         df.loc[mask_num, 'date'] = pd.to_datetime(df.loc[mask_num, 'temp_date'], unit='ms', utc=True)
     
-    # Convert string rows
+    # Convert string rows (ISO)
     if (~mask_num).any():
         df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
 
@@ -93,45 +87,43 @@ def load_map_data(days_back=30, selected_group="hydro"):
     
     return df[mask_time]
 
-# --- 4. FULL DATA LOADER (LEGACY / DEEP ANALYSIS) ---
+# --- 4. FULL DATA LOADER (FOR DEEP ANALYSIS) ---
 @st.cache_data(ttl=600)
 def load_elhub_data(year_filter=None):
-    """
-    Loads ALL data. Use carefully! Ideally use load_map_data where possible.
-    """
+    """Loads ALL data. Use carefully!"""
     coll = get_mongo_collection()
     if coll is None: return pd.DataFrame()
 
-    # Fetch data excluding _id
     data = list(coll.find({}, {"_id": 0}))
     df = pd.DataFrame(data)
 
     if df.empty: return df
 
-    # Cleanup types
     if "production_group" in df.columns:
         df['production_group'] = df['production_group'].fillna("Unknown").astype(str)
     if "price_area" in df.columns:
         df['price_area'] = df['price_area'].fillna("Unknown").astype(str)
     
-    # --- ROBUST DATE HANDLING ---
     date_col = "start_time" if "start_time" in df.columns else "startTime"
     
     if date_col in df.columns:
-        is_numeric = pd.to_numeric(df[date_col], errors='coerce').notna()
-        if (~is_numeric).any():
-            df.loc[~is_numeric, 'date'] = pd.to_datetime(df.loc[~is_numeric, date_col], utc=True, errors='coerce')
-        if is_numeric.any():
-            df.loc[is_numeric, 'date'] = pd.to_datetime(df.loc[is_numeric, date_col], unit='ms', utc=True)
+        # Fast mixed-type conversion
+        df['temp_numeric'] = pd.to_numeric(df[date_col], errors='coerce')
+        mask_num = df['temp_numeric'].notna()
+        
+        if mask_num.any():
+            df.loc[mask_num, 'date'] = pd.to_datetime(df.loc[mask_num, 'temp_numeric'], unit='ms', utc=True)
+        if (~mask_num).any():
+            df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
+            
         df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+        df.drop(columns=['temp_numeric'], inplace=True)
 
-    # Standardize value column name
-    if "value" in df.columns and "production_mwh" not in df.columns:
+    if "value" in df.columns:
         df.rename(columns={'value': 'production_mwh'}, inplace=True)
     elif "quantityKwh" in df.columns:
         df.rename(columns={'quantityKwh': 'production_mwh'}, inplace=True)
 
-    # Optional Year Filter
     if year_filter:
         df = df[df["date"].dt.year == year_filter]
 
@@ -140,38 +132,18 @@ def load_elhub_data(year_filter=None):
 # --- 5. API & GEOJSON ---
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
-    """Fetches ERA5 weather data."""
     hourly_vars = ",".join(WEATHER_VARS)
-    url = (
-        f"https://archive-api.open-meteo.com/v1/era5"
-        f"?latitude={lat}&longitude={lon}"
-        f"&start_date={start_date}&end_date={end_date}"
-        f"&hourly={hourly_vars}&timezone=Europe/Oslo"
-    )
+    url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&hourly={hourly_vars}&timezone=Europe/Oslo"
     try:
-        resp = requests.get(url, timeout=60)
-        resp.raise_for_status()
-        js = resp.json()
+        resp = requests.get(url, timeout=60); resp.raise_for_status(); js = resp.json()
         if "hourly" not in js: return pd.DataFrame()
-        
         df = pd.DataFrame(js["hourly"])
         df["time"] = pd.to_datetime(df["time"])
         return df
-    except Exception as e:
-        st.error(f"Weather API Error: {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 @st.cache_data
 def load_geojson():
-    """Loads the NVE Map Data"""
     try:
-        with open('elspot_areas.geojson', 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        # Try json extension just in case
-        try:
-            with open('elspot_areas.json', 'r') as f:
-                return json.load(f)
-        except:
-            st.error("File 'elspot_areas.geojson' not found. Please download it from NVE.")
-            return None
+        with open('elspot_areas.geojson', 'r') as f: return json.load(f)
+    except: return None
