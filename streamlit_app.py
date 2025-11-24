@@ -10,7 +10,7 @@ st.info("Select a region on the map to set the location for Snow Drift & Weather
 
 # 1. Load Data
 with st.spinner("Loading data..."):
-    df = utils.load_map_data()
+    df = utils.load_elhub_data()
     geojson = utils.load_geojson()
 
 # --- DEBUGGING BLOCK (Add this!) ---
