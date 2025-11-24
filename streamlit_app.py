@@ -8,85 +8,101 @@ st.set_page_config(page_title="Norwegian Energy Atlas", layout="wide")
 st.title("🇳🇴 Regional Energy Overview")
 st.info("Select a region on the map to set the location for Snow Drift & Weather Analysis.")
 
-# 1. Load Data
-with st.spinner("Loading data..."):
-    df = utils.load_elhub_data()
+# --- 1. INITIALIZE SESSION STATE ---
+if "selected_price_area" not in st.session_state:
+    st.session_state["selected_price_area"] = "NO1"
+if "selected_coords" not in st.session_state:
+    st.session_state["selected_coords"] = utils.CITIES["NO1"]
+
+# --- 2. CONTROLS (Moved to Top!) ---
+# We need these values BEFORE we load the data to make the query fast.
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    # Manual Area Selector (Syncs with Map)
+    all_areas = sorted(list(utils.CITIES.keys()))
+    selected_area_state = st.session_state["selected_price_area"]
+    
+    # Safety check: ensure state value is in list
+    idx = all_areas.index(selected_area_state) if selected_area_state in all_areas else 0
+    
+    selected_area = st.selectbox("Select Analysis Region:", options=all_areas, index=idx)
+    
+    # Update state if changed manually
+    if selected_area != st.session_state["selected_price_area"]:
+        st.session_state["selected_price_area"] = selected_area
+        st.session_state["selected_coords"] = utils.CITIES[selected_area]
+        st.rerun()
+
+with col2:
+    # Hardcoded list is faster than querying DB for unique values first
+    prod_groups = ["hydro", "wind", "nuclear", "solar", "thermal", "other"]
+    selected_group = st.selectbox("Map Production Group:", prod_groups, index=0)
+
+with col3:
+    days = st.slider("Days to Aggregate", 7, 365, 30)
+
+# --- 3. LOAD DATA (Optimized) ---
+# Now we pass the inputs to the loader so it only fetches what is needed
+with st.spinner(f"Fetching last {days} days of {selected_group} data..."):
+    df = utils.load_map_data(days_back=days, selected_group=selected_group)
     geojson = utils.load_geojson()
 
-# --- DEBUGGING BLOCK (Add this!) ---
 if df.empty:
-    st.error("❌ **CRITICAL ERROR:** Production Data is empty.")
-    st.write("Possible reasons:")
-    st.write("1. MongoDB connection failed (Check `.streamlit/secrets.toml`).")
-    st.write("2. The database collection is empty.")
-    st.write("3. `utils.py` is not filtering the data correctly.")
+    st.error(f"No data found for **{selected_group}** in the last **{days}** days.")
+    st.stop()
 
 if not geojson:
-    st.error("❌ **CRITICAL ERROR:** GeoJSON file not found.")
-    st.write("Make sure `elspot_areas.geojson` is inside the main project folder (next to Home.py).")
-
-# Stop only after showing the error
-if df.empty or not geojson:
+    st.error("GeoJSON file not found.")
     st.stop()
-# -----------------------------------
 
-# 2. Controls (The rest of your code continues here...)
+# --- 4. MAP PREPARATION ---
+# Aggregate mean value per area
+df_map = df.groupby('price_area')['production_mwh'].mean().reset_index()
 
-# 2. Controls
-col1, col2 = st.columns(2)
-with col1:
-    prod_groups = df['production_group'].unique()
-    selected_group = st.selectbox("Map Production Group:", prod_groups)
-with col2:
-    days = st.slider("Days to Aggregate (from latest date)", 7, 365, 30)
-
-
-
-# 3. Map Logic
-max_date = df['date'].max()
-mask = (df['date'] >= max_date - pd.Timedelta(days=days)) & (df['production_group'] == selected_group)
-df_map = df[mask].groupby('price_area')['production_mwh'].mean().reset_index()
-
-# --- CRITICAL FIX START ---
-# Your GeoJSON has "NO 1", "NO 2"... but DataFrame has "NO1", "NO2"...
-# We must insert a space into the DataFrame values to match the GeoJSON exactly.
+# FIX: Match GeoJSON "NO 1" format with Data "NO1" format
 df_map['price_area_map'] = df_map['price_area'].str.replace("NO", "NO ")
-# --- CRITICAL FIX END ---
 
-st.subheader(f"Average {selected_group} Production (Last {days} Days)")
+st.subheader(f"Average {selected_group.capitalize()} Production (Last {days} Days)")
 
 fig = px.choropleth_mapbox(
     df_map, 
     geojson=geojson, 
-    locations='price_area_map', # Use the new column with the space
-    featureidkey="properties.ElSpotOmr", # Updated to match your JSON key
+    locations='price_area_map', 
+    featureidkey="properties.ElSpotOmr", # Matches "NO 1" in NVE GeoJSON
     color='production_mwh', 
     color_continuous_scale="Viridis", 
     mapbox_style="carto-positron",
     zoom=4, 
     center={"lat": 65, "lon": 15}, 
-    opacity=0.5
+    opacity=0.5,
+    labels={'production_mwh': 'MWh'}
 )
 fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
 
-
-
-# 4. Capture Click
-event = st.plotly_chart(fig, on_select="rerun", selection_mode="points", use_container_width=True)
+# --- 5. CLICK INTERACTION ---
+event = st.plotly_chart(fig, on_select="rerun", selection_mode="points", use_container_width=True, key="map")
 
 if event and event["selection"]["points"]:
     point = event["selection"]["points"][0]
     
-    # Save Lat/Lon if clicked
+    # 1. Update Coordinates (Lat/Lon click)
     if "lat" in point:
-        st.session_state["selected_coords"] = {"lat": point["lat"], "lon": point["lon"]}
-        st.success(f"Selected Coordinates: {point['lat']:.4f}, {point['lon']:.4f}")
+        new_coords = {"lat": point["lat"], "lon": point["lon"]}
+        st.session_state["selected_coords"] = new_coords
     
-    # Save Price Area if clicked
+    # 2. Update Price Area (Polygon click)
     if "location" in point:
-        st.session_state["selected_price_area"] = point["location"]
-        st.success(f"Selected Price Area: {point['location']}")
+        # Convert "NO 1" back to "NO1"
+        area_clicked = point["location"].replace(" ", "")
+        if area_clicked in utils.CITIES:
+            st.session_state["selected_price_area"] = area_clicked
+            st.session_state["selected_coords"] = utils.CITIES[area_clicked]
+            st.rerun()
 
-# Default fallback if nothing selected
-if "selected_price_area" not in st.session_state:
-    st.info("Please click on the map to select a region.")
+# --- 6. FOOTER STATUS ---
+curr_area = st.session_state["selected_price_area"]
+curr_lat = st.session_state["selected_coords"]["lat"]
+curr_lon = st.session_state["selected_coords"]["lon"]
+
+st.success(f"✅ **Active Location:** {curr_area} ({curr_lat:.4f}, {curr_lon:.4f}) — Ready for Analysis pages!")
