@@ -29,14 +29,18 @@ if df.empty:
 col_left, col_right = st.columns(2)
 
 # LEFT: PIE CHART (Shares)
+
 with col_left:
     st.subheader(f"{data_type} Share")
     
+    # Area Selector
     price_areas = sorted(df['price_area'].unique())
     curr = st.session_state["selected_price_area"]
     idx = price_areas.index(curr) if curr in price_areas else 0
+    
     selected_area = st.selectbox("Price Area:", price_areas, index=idx)
     
+    # Sync state
     if selected_area != st.session_state["selected_price_area"]:
         st.session_state["selected_price_area"] = selected_area
         st.rerun()
@@ -44,12 +48,39 @@ with col_left:
     # Filter for Area
     df_area = df[df['price_area'] == selected_area]
     
-    # Group by 'group' and sum the 'daily_mwh'
-    pie_data = df_area.groupby('group')['daily_mwh'].sum().reset_index()
+    # Aggregate
+    pie_data = df_area.groupby('group')['mwh'].sum().reset_index()
     
-    fig1 = px.pie(pie_data, names='group', values='daily_mwh', hole=0.4,
-                  title=f"Total {data_type} ({selected_area})")
-    fig1.update_traces(textposition='inside', textinfo='percent+label')
+    # Sort so the biggest slice starts at 12 o'clock (looks cleaner)
+    pie_data = pie_data.sort_values('mwh', ascending=False)
+
+    # Custom Pastel Colors (Matches your reference image vibe)
+    custom_colors = ['#90C3C8', '#E8D68A', '#E39D86', '#CBB2E2', '#98C56D']
+
+    fig1 = px.pie(
+        pie_data, 
+        names='group', 
+        values='mwh', 
+        # Remove 'hole' if you want a full pie like the image, or keep 0.4 for donut
+        hole=0.0, 
+        color_discrete_sequence=custom_colors
+    )
+
+    # Styling to match the image
+    fig1.update_traces(
+        textposition='auto',   # Puts small labels outside with lines
+        textinfo='label+percent',
+        insidetextorientation='horizontal',
+        marker=dict(line=dict(color='#FFFFFF', width=2)) # White borders
+    )
+    
+    # Layout adjustments for the labels
+    fig1.update_layout(
+        showlegend=True,
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.05),
+        margin=dict(t=30, b=30, l=20, r=20)
+    )
+
     st.plotly_chart(fig1, use_container_width=True)
 
 # RIGHT: LINE CHART (Trends)
