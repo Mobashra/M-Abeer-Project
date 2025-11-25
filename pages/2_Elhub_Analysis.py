@@ -6,6 +6,8 @@ import utils
 st.set_page_config(page_title="Elhub Data Explorer", layout="wide")
 st.title("📊 Elhub Data Explorer")
 
+
+print("--- NEW CODE LOADED SUCCESSFULLY ---")
 if "selected_price_area" not in st.session_state:
     st.session_state["selected_price_area"] = "NO1"
 
