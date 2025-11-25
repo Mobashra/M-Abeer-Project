@@ -30,9 +30,10 @@ def get_mongo_collection(collection_name=None):
         st.error(f"MongoDB Connection Error: {e}")
         return None
 
-# --- 3. MAP LOADER (Aggregation - FAST) ---
+# --- 3. FAST MAP LOADER (Server-Side Aggregation) ---
 @st.cache_data(ttl=3600)
 def load_map_data(target_year, days_to_agg, data_type, selected_group):
+    # 1. Select Collection
     if data_type == "Production":
         coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
         group_col = "production_group"
@@ -43,94 +44,93 @@ def load_map_data(target_year, days_to_agg, data_type, selected_group):
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    # Date Math
+    # 2. Date Math (Native MongoDB Dates!)
     end_date = datetime(target_year, 12, 31, 23, 59)
     start_date = end_date - timedelta(days=days_to_agg)
-    start_str, end_str = start_date.isoformat(), end_date.isoformat()
-    start_ts, end_ts = start_date.timestamp() * 1000, end_date.timestamp() * 1000
 
+    # 3. Pipeline (Fast & Clean)
     pipeline = [
-        {"$match": {group_col: {"$regex": f"^{selected_group}$", "$options": "i"}}},
+        # Filter by Group & Date Range
         {"$match": {
-            "$or": [
-                {"start_time": {"$gte": start_str, "$lte": end_str}},
-                {"startTime": {"$gte": start_str, "$lte": end_str}},
-                {"start_time": {"$gte": start_ts, "$lte": end_ts}},
-                {"startTime": {"$gte": start_ts, "$lte": end_ts}}
-            ]
+            group_col: {"$regex": f"^{selected_group}$", "$options": "i"},
+            "start_time": {"$gte": start_date, "$lte": end_date}
         }},
+        # Group & Average
         {"$group": {
             "_id": "$price_area", 
-            "val": {"$avg": "$value"},
-            "val_alt": {"$avg": "$quantityKwh"}
+            "val": {"$avg": "$value"}
         }}
     ]
     
     data = list(coll.aggregate(pipeline))
     df = pd.DataFrame(data)
+    
     if df.empty: return df
     
-    df['val'] = df['val'].fillna(df['val_alt'])
     df.rename(columns={'_id': 'price_area'}, inplace=True)
     df['price_area_map'] = df['price_area'].astype(str).str.replace("NO", "NO ")
     
     return df
 
-# --- 4. PAGE 2 LOADER (Raw Fetch for 1 Year - ROBUST) ---
+# --- 4. YEAR LOADER (For Page 2 Charts) ---
 @st.cache_data(ttl=600)
-def get_year_data(data_type, year):
+def load_yearly_data(data_type, year):
     """
-    Fetches detailed data for ONE year to populate charts.
+    Fetches raw data for ONE year. 
+    Fast because MongoDB indexes the Date objects efficiently.
     """
     if data_type == "Production":
-        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        coll = get_mongo_collection(st.secrets["mongo"].get("collection", "production_mba_hour"))
         group_col = "production_group"
     else:
-        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        coll = get_mongo_collection(st.secrets["mongo"].get("collection_cons", "consumption_mba_hour"))
         group_col = "consumption_group"
     
-    coll = get_mongo_collection(coll_name)
-    if coll is None: return pd.DataFrame()
-
-    # Regex query for the year (Matches strings "2023-..." etc)
-    regex_pattern = f"^{year}"
-    query = {
-        "$or": [
-            {"start_time": {"$regex": regex_pattern}},
-            {"startTime": {"$regex": regex_pattern}},
-            {"start_time": {"$type": "number"}}, # Fetch numbers for 2021 filtering
-            {"startTime": {"$type": "number"}}
-        ]
-    }
+    # Strict Date Range Query
+    start_date = datetime(year, 1, 1)
+    end_date = datetime(year, 12, 31, 23, 59)
     
-    # Fetch
-    projection = {"price_area": 1, group_col: 1, "start_time": 1, "startTime": 1, "value": 1, "quantityKwh": 1, "_id": 0}
-    cursor = coll.find(query, projection).limit(300000)
-    df = pd.DataFrame(list(cursor))
+    query = {"start_time": {"$gte": start_date, "$lte": end_date}}
+    projection = {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}
+    
+    # Fetch (Limit 300k is plenty for one year)
+    data = list(coll.find(query, projection).limit(300000))
+    df = pd.DataFrame(data)
     
     if df.empty: return df
 
-    # Cleanup
-    if group_col in df.columns: df.rename(columns={group_col: 'group'}, inplace=True)
+    # Simple Cleanup (No more date parsing nightmares!)
+    df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
     df['group'] = df['group'].astype(str).fillna("Unknown")
     
-    if "value" in df.columns: df.rename(columns={'value': 'mwh'}, inplace=True)
-    elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'mwh'}, inplace=True)
-
-    # Date Fix
-    date_col = "start_time" if "start_time" in df.columns else "startTime"
-    df['temp'] = pd.to_numeric(df[date_col], errors='coerce')
-    mask_num = df['temp'].notna()
-    
-    if mask_num.any(): df.loc[mask_num, 'date'] = pd.to_datetime(df.loc[mask_num, 'temp'], unit='ms', utc=True)
-    if (~mask_num).any(): df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
-        
+    # Convert timezone (MongoDB stores as UTC, we want Oslo)
     df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
     
-    # Strict Year Filter
-    return df[df['date'].dt.year == year]
+    return df
 
-# --- 5. API & GEOJSON ---
+# --- 5. LEGACY / HELPER LOADERS ---
+@st.cache_data(ttl=600)
+def load_elhub_data(year_filter=None):
+    # Simplified legacy loader
+    coll = get_mongo_collection()
+    if coll is None: return pd.DataFrame()
+    
+    query = {}
+    if year_filter:
+        s = datetime(year_filter, 1, 1)
+        e = datetime(year_filter, 12, 31, 23, 59)
+        query = {"start_time": {"$gte": s, "$lte": e}}
+
+    data = list(coll.find(query, {"_id": 0}))
+    df = pd.DataFrame(data)
+    
+    if not df.empty:
+        df.rename(columns={"startTime": "start_time", "quantityKwh": "value"}, inplace=True)
+        df['date'] = df['start_time'].dt.tz_convert("Europe/Oslo")
+        if "value" in df.columns: df.rename(columns={'value': 'production_mwh'}, inplace=True)
+        
+    return df
+
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
     hourly_vars = ",".join(WEATHER_VARS)
