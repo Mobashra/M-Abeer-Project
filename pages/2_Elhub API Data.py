@@ -6,20 +6,19 @@ import utils
 st.set_page_config(page_title="Elhub Data Explorer", layout="wide")
 st.title("📊 Elhub Data Explorer")
 
-# --- 1. SAFETY DEFAULTS ---
+# --- 1. SAFETY DEFAULT ---
 if "selected_price_area" not in st.session_state:
     st.session_state["selected_price_area"] = "NO1"
 
-# --- 2. CONTROLS (Top Level) ---
+# --- 2. CONTROLS ---
 col1, col2 = st.columns(2)
 with col1:
     data_type = st.radio("Data Source", ["Production", "Consumption"], horizontal=True)
 with col2:
-    # Allow 2021-2024
     selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
 
 # --- 3. LOAD DATA ---
-# Uses the new function in utils.py
+# This uses the NEW function in utils.py (Fast!)
 with st.spinner(f"Loading {data_type} data for {selected_year}..."):
     df = utils.load_yearly_data(data_type, selected_year)
 
