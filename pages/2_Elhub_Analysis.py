@@ -16,9 +16,9 @@ with col1:
 with col2:
     selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
 
-# --- LOAD DATA (AGGREGATED) ---
+# --- LOAD DATA ---
 with st.spinner(f"Fetching daily stats for {selected_year}..."):
-    # This is now super fast because it fetches only ~2000 rows
+    # This returns data that is ALREADY grouped by Day (Fast!)
     df = utils.get_year_data(data_type, selected_year)
 
 if df.empty:
@@ -41,10 +41,10 @@ with col_left:
         st.session_state["selected_price_area"] = selected_area
         st.rerun()
 
-    # Filter for selected area
+    # Filter for Area
     df_area = df[df['price_area'] == selected_area]
     
-    # Aggregate the Daily sums into a Yearly Total for the Pie Chart
+    # Group by 'group' and sum the 'daily_mwh'
     pie_data = df_area.groupby('group')['daily_mwh'].sum().reset_index()
     
     fig1 = px.pie(pie_data, names='group', values='daily_mwh', hole=0.4,
@@ -60,9 +60,13 @@ with col_right:
         sel_groups = st.multiselect("Filter Groups:", all_groups, default=all_groups)
         
         if sel_groups:
-            # The data is ALREADY Daily, so no resampling needed!
+            # Filter for Group
             df_line = df_area[df_area['group'].isin(sel_groups)].copy()
             
+            # Sort by date to ensure the line is smooth (Fixes "Zig-Zag" graphs)
+            df_line = df_line.sort_values("date")
+            
+            # Plot directly (No resampling needed - it's already Daily!)
             fig2 = px.line(
                 df_line, 
                 x='date', 
