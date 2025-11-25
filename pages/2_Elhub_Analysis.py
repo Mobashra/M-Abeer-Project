@@ -41,23 +41,46 @@ col_left, col_right = st.columns(2)
 with col_left:
     st.subheader(f"{data_type} Share")
     
+    # Area Selector
     price_areas = sorted(df['price_area'].unique())
     curr = st.session_state["selected_price_area"]
     idx = price_areas.index(curr) if curr in price_areas else 0
+    
     selected_area = st.selectbox("Price Area:", price_areas, index=idx)
     
+    # Sync state
     if selected_area != st.session_state["selected_price_area"]:
         st.session_state["selected_price_area"] = selected_area
         st.rerun()
 
+    # Filter & Aggregate
     df_area = df[df['price_area'] == selected_area]
-    
-    # Use the dynamic 'val_col' here
     pie_data = df_area.groupby('group')[val_col].sum().reset_index()
     
-    fig1 = px.pie(pie_data, names='group', values=val_col, hole=0.4,
-                  title=f"Total {data_type} ({selected_area})")
-    fig1.update_traces(textposition='inside', textinfo='percent+label')
+    # --- YOUR STYLING RESTORED ---
+    fig1 = px.pie(
+        pie_data, 
+        names='group', 
+        values=val_col,
+        title=f"Total {data_type} in {selected_area} ({selected_year})",
+        color_discrete_sequence=px.colors.qualitative.Pastel  # Your requested colors
+    )
+
+    # Apply the "Pretty" styling
+    fig1.update_traces(
+        textposition='auto',       # Puts small labels outside with lines (Leader Lines)
+        textinfo='percent+label',  # Matches your old code
+        pull=[0.05] * len(pie_data), # Explodes the slices (Your specific request)
+        marker=dict(line=dict(color='#000000', width=1)) # Adds thin black border for clarity
+    )
+    
+    # Layout adjustments from your old code
+    fig1.update_layout(
+        title=dict(x=0.5, xanchor='center'), # Centers the title
+        font=dict(size=13),
+        margin=dict(t=50, b=20, l=20, r=20)
+    )
+
     st.plotly_chart(fig1, use_container_width=True)
 
 # RIGHT: LINE CHART
