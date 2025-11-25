@@ -161,3 +161,84 @@ def load_geojson():
     try:
         with open('elspot_areas.geojson', 'r') as f: return json.load(f)
     except: return None
+
+
+# --- ADD THIS TO utils.py ---
+
+@st.cache_data(ttl=600)
+def load_yearly_data(data_type, year):
+    """
+    Loads data for a specific Year and Type (Prod/Cons).
+    Fetches ALL groups for that year (needed for Pie Charts).
+    """
+    # 1. Determine Collection & Column Names
+    if data_type == "Production":
+        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        group_col = "production_group"
+    else:
+        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        group_col = "consumption_group"
+    
+    coll = get_mongo_collection(coll_name)
+    if coll is None: return pd.DataFrame()
+
+    # 2. Build Query for Specific Year (Server-Side Filtering)
+    # Regex is the safest way to catch both String dates ("2022-01...") 
+    # and prevent downloading other years.
+    regex_pattern = f"^{year}"
+    
+    # We accept either String format (2022+) or Numbers (2021)
+    # This query gets roughly 200k rows (5 areas * 5 groups * 8760 hours)
+    # This is manageable for Streamlit.
+    query = {
+        "$or": [
+            {"start_time": {"$regex": regex_pattern}}, # String dates
+            {"startTime": {"$regex": regex_pattern}},
+            # For 2021 numbers, we fetch based on numeric range if year is 2021
+            {"start_time": {"$type": "number"}}, 
+            {"startTime": {"$type": "number"}}
+        ]
+    }
+    
+    # Optimization: Only fetch columns we need
+    projection = {
+        "price_area": 1, group_col: 1, 
+        "start_time": 1, "startTime": 1, 
+        "value": 1, "quantityKwh": 1, "_id": 0
+    }
+
+    # Limit 300k is safe for a full year of hourly data
+    cursor = coll.find(query, projection).limit(300000)
+    data = list(cursor)
+    df = pd.DataFrame(data)
+    
+    if df.empty: return df
+
+    # 3. Standardize Columns (So the page code is clean)
+    # Rename specific group col to generic 'group'
+    if group_col in df.columns:
+        df.rename(columns={group_col: 'group'}, inplace=True)
+    df['group'] = df['group'].astype(str).fillna("Unknown")
+
+    # Standardize Value
+    if "value" in df.columns: df.rename(columns={'value': 'mwh'}, inplace=True)
+    elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'mwh'}, inplace=True)
+
+    # 4. Standardize Date
+    date_col = "start_time" if "start_time" in df.columns else "startTime"
+    
+    df['temp'] = pd.to_numeric(df[date_col], errors='coerce')
+    mask_num = df['temp'].notna()
+    
+    if mask_num.any():
+        df.loc[mask_num, 'date'] = pd.to_datetime(df.loc[mask_num, 'temp'], unit='ms', utc=True)
+    if (~mask_num).any():
+        df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
+        
+    df.drop(columns=['temp'], inplace=True)
+    df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+
+    # 5. Strict Year Filter (Cleanup any extra numeric data)
+    df = df[df['date'].dt.year == year]
+    
+    return df
