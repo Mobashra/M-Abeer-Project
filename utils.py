@@ -31,11 +31,11 @@ def get_mongo_collection(collection_name=None):
         return None
 
 # --- 3. ULTRA-FAST YEAR LOADER (AGGREGATED) ---
+# This is the function your Page 2 is looking for!
 @st.cache_data(ttl=3600)
 def get_year_data(data_type, year):
     """
     Uses MongoDB Aggregation to group hourly data into DAILY data on the server.
-    Reduces download size from 200,000 rows to ~1,800 rows.
     """
     # 1. Select Collection
     if data_type == "Production":
@@ -52,17 +52,12 @@ def get_year_data(data_type, year):
     end_date = datetime(year, 12, 31, 23, 59, 59)
 
     # 3. Aggregation Pipeline
-    # This asks MongoDB to:
-    #   1. Filter for the specific year
-    #   2. Create a 'date_str' (YYYY-MM-DD)
-    #   3. Sum the 'value' for each (Price Area + Group + Day)
     pipeline = [
         {"$match": {"start_time": {"$gte": start_date, "$lte": end_date}}},
         {"$project": {
             "price_area": 1,
             "group": f"${group_col}",
             "value": 1,
-            # Extract YYYY-MM-DD string in Oslo time
             "day": {"$dateToString": {"format": "%Y-%m-%d", "date": "$start_time", "timezone": "Europe/Oslo"}}
         }},
         {"$group": {
@@ -71,25 +66,21 @@ def get_year_data(data_type, year):
         }}
     ]
 
-    # Execute (Fast!)
+    # Execute
     data = list(coll.aggregate(pipeline))
     df = pd.DataFrame(data)
     
     if df.empty: return df
 
-    # 4. Flatten the Result
-    # MongoDB returns nested _id objects, we need flat columns
+    # 4. Flatten
     df['price_area'] = df['_id'].apply(lambda x: x['area'])
     df['group'] = df['_id'].apply(lambda x: x['grp'])
     df['date'] = pd.to_datetime(df['_id'].apply(lambda x: x['day']))
     df.drop(columns=['_id'], inplace=True)
     
-    # Sort for nicer display
-    df.sort_values(['date', 'price_area', 'group'], inplace=True)
-    
     return df
 
-# --- 4. MAP LOADER (Keep this for Home Page) ---
+# --- 4. MAP LOADER (For Home Page) ---
 @st.cache_data(ttl=3600)
 def load_map_data(target_year, days_to_agg, data_type, selected_group):
     if data_type == "Production":
@@ -99,7 +90,6 @@ def load_map_data(target_year, days_to_agg, data_type, selected_group):
         coll = get_mongo_collection(st.secrets["mongo"]["collection_cons"])
         group_col = "consumption_group"
 
-    # Date Math
     end_date = pd.Timestamp(f"{target_year}-12-31 23:59", tz="Europe/Oslo").tz_convert("UTC")
     start_date = end_date - pd.Timedelta(days=days_to_agg)
 
