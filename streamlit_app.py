@@ -61,8 +61,7 @@ if not geojson:
     st.stop()
 
 # --- 4. MAP PREPARATION ---
-df_map = df.groupby('price_area')['val'].mean().reset_index()
-df_map['price_area_map'] = df_map['price_area'].str.replace("NO", "NO ")
+df_map = df
 
 st.subheader(f"Mean {selected_group.capitalize()} {data_type} ({year})")
 
