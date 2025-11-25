@@ -30,11 +30,12 @@ def get_mongo_collection(collection_name=None):
         st.error(f"MongoDB Connection Error: {e}")
         return None
 
-# --- 3. FAST MAP LOADER (MISSING FUNCTION) ---
-@st.cache_data(ttl=3600)
-def load_map_data(target_year, days_to_agg, data_type, selected_group):
+# --- 3. ROBUST DATA LOADER (FOR PAGE 2) ---
+@st.cache_data(ttl=600)
+def get_year_data(data_type, year):
     """
-    Loads data for the map using server-side filtering.
+    Fetches raw data for ONE specific year.
+    Does NOT aggregate on server (safer for mixed types).
     """
     # 1. Select Collection
     if data_type == "Production":
@@ -43,30 +44,47 @@ def load_map_data(target_year, days_to_agg, data_type, selected_group):
     else:
         coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
         group_col = "consumption_group"
-
+    
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    # 2. Build Query (Filter by Group)
-    query = {group_col: {"$regex": f"^{selected_group}$", "$options": "i"}}
+    # 2. Build Query (Fetch by Year String or Number)
+    # This gets ~200k rows max, which loads in <5 seconds
+    regex_pattern = f"^{year}"
+    query = {
+        "$or": [
+            {"start_time": {"$regex": regex_pattern}}, # String dates (2022+)
+            {"startTime": {"$regex": regex_pattern}},
+            {"start_time": {"$type": "number"}},       # Numbers (2021 - fetch all numbers then filter)
+            {"startTime": {"$type": "number"}}
+        ]
+    }
     
-    # 3. Projection (Only fetch what we need)
-    projection = {"price_area": 1, "start_time": 1, "startTime": 1, "value": 1, "quantityKwh": 1, "_id": 0}
-    
-    # 4. Fetch Data (Limit 100k)
-    # Sort by time descending to get the newest data for the selected year
-    cursor = coll.find(query, projection).sort("_id", -1).limit(100000)
-    df = pd.DataFrame(list(cursor))
+    # Only get necessary columns
+    projection = {
+        "price_area": 1, group_col: 1, 
+        "start_time": 1, "startTime": 1, 
+        "value": 1, "quantityKwh": 1, "_id": 0
+    }
+
+    # 3. Execute Query
+    # Limit 500k protects against crashing memory
+    cursor = coll.find(query, projection).limit(500000)
+    data = list(cursor)
+    df = pd.DataFrame(data)
     
     if df.empty: return df
 
-    # 5. Cleanup & Types
-    if "price_area" in df.columns: df['price_area'] = df['price_area'].astype(str)
-    if "value" in df.columns: df.rename(columns={'value': 'val'}, inplace=True)
-    elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'val'}, inplace=True)
+    # 4. Cleanup
+    if group_col in df.columns: df.rename(columns={group_col: 'group'}, inplace=True)
+    df['group'] = df['group'].astype(str).fillna("Unknown")
 
-    # Date Conversion
+    if "value" in df.columns: df.rename(columns={'value': 'mwh'}, inplace=True)
+    elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'mwh'}, inplace=True)
+
+    # 5. Date Conversion (The Mixed Type Fix)
     date_col = "start_time" if "start_time" in df.columns else "startTime"
+    
     df['temp'] = pd.to_numeric(df[date_col], errors='coerce')
     mask_num = df['temp'].notna()
     
@@ -75,63 +93,56 @@ def load_map_data(target_year, days_to_agg, data_type, selected_group):
     if (~mask_num).any():
         df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
         
-    df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
     df.drop(columns=['temp'], inplace=True)
+    df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
 
-    # 6. Filter by Year & Days
-    ref_date = pd.Timestamp(f"{target_year}-12-31", tz="Europe/Oslo")
-    start_date = ref_date - pd.Timedelta(days=days_to_agg)
+    # 6. Strict Year Filter (Removes any extra 2021 data if we grabbed too much)
+    df = df[df['date'].dt.year == year]
     
-    # Keep data that matches the year AND the time window
-    mask = (df['date'].dt.year == target_year) & (df['date'] >= start_date)
-    return df[mask]
+    return df
 
-# --- 4. DEEP DIVE LOADER (FOR OTHER PAGES) ---
-@st.cache_data(ttl=600)
-def load_yearly_data(data_type, year):
-    # ... (Same logic as above but fetches ALL groups for the year)
+# --- 4. MAP LOADER (Keep this, it works for Home Page) ---
+@st.cache_data(ttl=3600)
+def load_map_data(target_year, days_to_agg, data_type, selected_group):
+    # ... (Keep the Aggregation logic from previous response here, or use the one below)
+    # To be safe, I'll paste the ROBUST version here too:
     if data_type == "Production":
         coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
         group_col = "production_group"
     else:
         coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
         group_col = "consumption_group"
-    
+
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    regex_pattern = f"^{year}"
-    query = {
-        "$or": [
-            {"start_time": {"$regex": regex_pattern}},
-            {"startTime": {"$regex": regex_pattern}},
-            {"start_time": {"$type": "number"}},
-            {"startTime": {"$type": "number"}}
-        ]
-    }
+    # Regex Group Query
+    query = {group_col: {"$regex": f"^{selected_group}$", "$options": "i"}}
     
-    projection = {"price_area": 1, group_col: 1, "start_time": 1, "startTime": 1, "value": 1, "quantityKwh": 1, "_id": 0}
-    cursor = coll.find(query, projection).limit(300000)
+    projection = {"price_area": 1, "start_time": 1, "startTime": 1, "value": 1, "quantityKwh": 1, "_id": 0}
+    cursor = coll.find(query, projection).sort("_id", -1).limit(50000)
     df = pd.DataFrame(list(cursor))
     
     if df.empty: return df
 
-    if group_col in df.columns: df.rename(columns={group_col: 'group'}, inplace=True)
-    df['group'] = df['group'].astype(str).fillna("Unknown")
-    if "value" in df.columns: df.rename(columns={'value': 'mwh'}, inplace=True)
-    elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'mwh'}, inplace=True)
+    if "value" in df.columns: df.rename(columns={'value': 'val'}, inplace=True)
+    elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'val'}, inplace=True)
+    if "price_area" in df.columns: df['price_area'] = df['price_area'].astype(str)
 
     date_col = "start_time" if "start_time" in df.columns else "startTime"
     df['temp'] = pd.to_numeric(df[date_col], errors='coerce')
-    mask_num = df['temp'].notna()
-    if mask_num.any(): df.loc[mask_num, 'date'] = pd.to_datetime(df.loc[mask_num, 'temp'], unit='ms', utc=True)
-    if (~mask_num).any(): df.loc[~mask_num, 'date'] = pd.to_datetime(df.loc[~mask_num, date_col], utc=True, errors='coerce')
-    df.drop(columns=['temp'], inplace=True)
+    mask = df['temp'].notna()
+    if mask.any(): df.loc[mask, 'date'] = pd.to_datetime(df.loc[mask, 'temp'], unit='ms', utc=True)
+    if (~mask).any(): df.loc[~mask, 'date'] = pd.to_datetime(df.loc[~mask, date_col], utc=True, errors='coerce')
     df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
-    
-    return df[df['date'].dt.year == year]
 
-# --- 5. OTHER HELPERS ---
+    # Date Filter
+    ref_date = pd.Timestamp(f"{target_year}-12-31", tz="Europe/Oslo")
+    start_date = ref_date - pd.Timedelta(days=days_to_agg)
+    mask = (df['date'].dt.year == target_year) & (df['date'] >= start_date)
+    return df[mask]
+
+# --- 5. API & GEOJSON ---
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
     hourly_vars = ",".join(WEATHER_VARS)
