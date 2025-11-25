@@ -176,3 +176,114 @@ def load_geojson():
     try:
         with open('elspot_areas.geojson', 'r') as f: return json.load(f)
     except: return None
+
+
+# --- ADD THIS TO utils.py ---
+
+@st.cache_data(ttl=3600)
+def aggregate_yearly_data(data_type, year):
+    """
+    Ultra-Fast: Asks MongoDB to group and sum data for the whole year.
+    Returns:
+      1. pie_df: Total MWh per Group (for Pie Chart)
+      2. line_df: Daily MWh per Group (for Line Chart)
+    """
+    # 1. Setup Collection
+    if data_type == "Production":
+        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        group_col = "production_group"
+    else:
+        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        group_col = "consumption_group"
+    
+    coll = get_mongo_collection(coll_name)
+    if coll is None: return pd.DataFrame(), pd.DataFrame()
+
+    # 2. Define Time Range
+    start_str = f"{year}-01-01"
+    end_str = f"{year}-12-31"
+    # Timestamps for 2021 numbers
+    start_ts = datetime(year, 1, 1).timestamp() * 1000
+    end_ts = datetime(year, 12, 31, 23, 59).timestamp() * 1000
+
+    # 3. Match Stage (Filter Year)
+    match_stage = {
+        "$match": {
+            "$or": [
+                {"start_time": {"$gte": start_str, "$lte": end_str}},
+                {"startTime": {"$gte": start_str, "$lte": end_str}},
+                {"start_time": {"$gte": start_ts, "$lte": end_ts}},
+                {"startTime": {"$gte": start_ts, "$lte": end_ts}}
+            ]
+        }
+    }
+
+    # 4. Pipeline for Pie Chart (Total per Group)
+    pie_pipeline = [
+        match_stage,
+        {"$group": {
+            "_id": f"${group_col}", 
+            "total_mwh": {"$sum": "$value"},
+            "total_mwh_alt": {"$sum": "$quantityKwh"}
+        }}
+    ]
+    
+    # 5. Pipeline for Line Chart (Daily per Group)
+    # We project a 'day' string to group by
+    line_pipeline = [
+        match_stage,
+        {"$project": {
+            "group": f"${group_col}",
+            "mwh": {"$ifNull": ["$value", "$quantityKwh"]}, # Handle both col names
+            # Create a date string YYYY-MM-DD. 
+            # Note: This simple substring works for ISO strings. 
+            # For timestamps, it's trickier, so we might get raw rows for 2021 if needed.
+            # But let's try the string approach first as it covers 2022-2024.
+            "day_str": {"$substr": ["$start_time", 0, 10]} 
+        }},
+        {"$group": {
+            "_id": {"day": "$day_str", "grp": "$group"},
+            "daily_mwh": {"$sum": "$mwh"}
+        }}
+    ]
+
+    # Run Queries
+    pie_data = list(coll.aggregate(pie_pipeline))
+    
+    # For line data, aggregation is complex with mixed types. 
+    # Fallback: Download raw data but ONLY 3 columns (Group, Time, Value)
+    # This is still 10x faster than downloading everything.
+    projection = {group_col: 1, "start_time": 1, "startTime": 1, "value": 1, "quantityKwh": 1, "_id": 0}
+    raw_cursor = coll.find(match_stage["$match"], projection)
+    raw_df = pd.DataFrame(list(raw_cursor))
+
+    # Process Pie Data
+    pie_df = pd.DataFrame(pie_data)
+    if not pie_df.empty:
+        pie_df['mwh'] = pie_df['total_mwh'].fillna(0) + pie_df['total_mwh_alt'].fillna(0)
+        pie_df.rename(columns={'_id': 'group'}, inplace=True)
+
+    # Process Line Data (Raw Pandas)
+    if not raw_df.empty:
+        # Standardize Cols
+        if group_col in raw_df.columns: raw_df.rename(columns={group_col: 'group'}, inplace=True)
+        if "value" in raw_df.columns: raw_df.rename(columns={'value': 'mwh'}, inplace=True)
+        elif "quantityKwh" in raw_df.columns: raw_df.rename(columns={'quantityKwh': 'mwh'}, inplace=True)
+        
+        # Fix Dates
+        date_c = "start_time" if "start_time" in raw_df.columns else "startTime"
+        raw_df['date'] = pd.to_numeric(raw_df[date_c], errors='coerce')
+        mask = raw_df['date'].notna()
+        
+        # Convert
+        if mask.any(): raw_df.loc[mask, 'date'] = pd.to_datetime(raw_df.loc[mask, 'date'], unit='ms', utc=True)
+        if (~mask).any(): raw_df.loc[~mask, 'date'] = pd.to_datetime(raw_df.loc[~mask, date_c], utc=True, errors='coerce')
+        
+        raw_df['date'] = raw_df['date'].dt.tz_convert("Europe/Oslo")
+        
+        # Group by Day
+        line_df = raw_df.groupby([pd.Grouper(key='date', freq='D'), 'group'])['mwh'].sum().reset_index()
+    else:
+        line_df = pd.DataFrame()
+
+    return pie_df, line_df
