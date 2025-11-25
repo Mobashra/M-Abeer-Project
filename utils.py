@@ -30,14 +30,14 @@ def get_mongo_collection(collection_name=None):
         st.error(f"MongoDB Connection Error: {e}")
         return None
 
-# --- 3. FAST LOADER (YEAR + TYPE) ---
+# --- 3. ROBUST DATA LOADER (FOR PAGE 2) ---
 @st.cache_data(ttl=600)
-def load_yearly_data(data_type, year):
+def get_year_data(data_type, year):
     """
-    Loads ALL groups for a specific Year and Type (Prod/Cons).
-    Optimized to fetch ~200k rows instead of 1 million.
+    Fetches raw data for ONE specific year.
+    Does NOT aggregate on server (safer for mixed types).
     """
-    # 1. Determine Collection
+    # 1. Select Collection
     if data_type == "Production":
         coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
         group_col = "production_group"
@@ -48,40 +48,41 @@ def load_yearly_data(data_type, year):
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    # 2. Build Query
-    # Use Regex to filter by year string (Fastest for mixed types)
+    # 2. Build Query (Fetch by Year String or Number)
+    # This gets ~200k rows max, which loads in <5 seconds
     regex_pattern = f"^{year}"
     query = {
         "$or": [
-            {"start_time": {"$regex": regex_pattern}}, # String dates
+            {"start_time": {"$regex": regex_pattern}}, # String dates (2022+)
             {"startTime": {"$regex": regex_pattern}},
-            {"start_time": {"$type": "number"}},       # Numbers (2021)
+            {"start_time": {"$type": "number"}},       # Numbers (2021 - fetch all numbers then filter)
             {"startTime": {"$type": "number"}}
         ]
     }
     
+    # Only get necessary columns
     projection = {
         "price_area": 1, group_col: 1, 
         "start_time": 1, "startTime": 1, 
         "value": 1, "quantityKwh": 1, "_id": 0
     }
 
-    # Limit 300k is safe for one full year
-    cursor = coll.find(query, projection).limit(300000)
+    # 3. Execute Query
+    # Limit 500k protects against crashing memory
+    cursor = coll.find(query, projection).limit(500000)
     data = list(cursor)
     df = pd.DataFrame(data)
     
     if df.empty: return df
 
-    # 3. Standardize Columns
-    if group_col in df.columns:
-        df.rename(columns={group_col: 'group'}, inplace=True)
+    # 4. Cleanup
+    if group_col in df.columns: df.rename(columns={group_col: 'group'}, inplace=True)
     df['group'] = df['group'].astype(str).fillna("Unknown")
 
     if "value" in df.columns: df.rename(columns={'value': 'mwh'}, inplace=True)
     elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'mwh'}, inplace=True)
 
-    # 4. Standardize Date
+    # 5. Date Conversion (The Mixed Type Fix)
     date_col = "start_time" if "start_time" in df.columns else "startTime"
     
     df['temp'] = pd.to_numeric(df[date_col], errors='coerce')
@@ -95,14 +96,16 @@ def load_yearly_data(data_type, year):
     df.drop(columns=['temp'], inplace=True)
     df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
 
-    # 5. Strict Year Filter
+    # 6. Strict Year Filter (Removes any extra 2021 data if we grabbed too much)
     df = df[df['date'].dt.year == year]
     
     return df
 
-# --- 4. MAP LOADER ---
+# --- 4. MAP LOADER (Keep this, it works for Home Page) ---
 @st.cache_data(ttl=3600)
 def load_map_data(target_year, days_to_agg, data_type, selected_group):
+    # ... (Keep the Aggregation logic from previous response here, or use the one below)
+    # To be safe, I'll paste the ROBUST version here too:
     if data_type == "Production":
         coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
         group_col = "production_group"
@@ -113,52 +116,33 @@ def load_map_data(target_year, days_to_agg, data_type, selected_group):
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    end_date = datetime(target_year, 12, 31, 23, 59)
-    start_date = end_date - timedelta(days=days_to_agg)
-    start_str = start_date.isoformat()
-    end_str = end_date.isoformat()
-    start_ts = start_date.timestamp() * 1000
-    end_ts = end_date.timestamp() * 1000
-
-    pipeline = [
-        {"$match": {group_col: {"$regex": f"^{selected_group}$", "$options": "i"}}},
-        {"$match": {
-            "$or": [
-                {"start_time": {"$gte": start_str, "$lte": end_str}},
-                {"startTime": {"$gte": start_str, "$lte": end_str}},
-                {"start_time": {"$gte": start_ts, "$lte": end_ts}},
-                {"startTime": {"$gte": start_ts, "$lte": end_ts}}
-            ]
-        }},
-        {"$group": {
-            "_id": "$price_area", 
-            "val": {"$avg": "$value"},
-            "val_alt": {"$avg": "$quantityKwh"}
-        }}
-    ]
+    # Regex Group Query
+    query = {group_col: {"$regex": f"^{selected_group}$", "$options": "i"}}
     
-    data = list(coll.aggregate(pipeline))
-    df = pd.DataFrame(data)
+    projection = {"price_area": 1, "start_time": 1, "startTime": 1, "value": 1, "quantityKwh": 1, "_id": 0}
+    cursor = coll.find(query, projection).sort("_id", -1).limit(50000)
+    df = pd.DataFrame(list(cursor))
+    
     if df.empty: return df
-    
-    df['val'] = df['val'].fillna(df['val_alt'])
-    df.rename(columns={'_id': 'price_area'}, inplace=True)
-    df['price_area_map'] = df['price_area'].astype(str).str.replace("NO", "NO ")
-    
-    return df
 
-# --- 5. LEGACY LOADER (Backup) ---
-@st.cache_data(ttl=600)
-def load_elhub_data(year_filter=None):
-    coll = get_mongo_collection()
-    if coll is None: return pd.DataFrame()
-    data = list(coll.find({}, {"_id": 0}))
-    df = pd.DataFrame(data)
-    if df.empty: return df
-    # (Basic cleanup omitted for brevity as we use specialized loaders now)
-    return df
+    if "value" in df.columns: df.rename(columns={'value': 'val'}, inplace=True)
+    elif "quantityKwh" in df.columns: df.rename(columns={'quantityKwh': 'val'}, inplace=True)
+    if "price_area" in df.columns: df['price_area'] = df['price_area'].astype(str)
 
-# --- 6. API & GEOJSON ---
+    date_col = "start_time" if "start_time" in df.columns else "startTime"
+    df['temp'] = pd.to_numeric(df[date_col], errors='coerce')
+    mask = df['temp'].notna()
+    if mask.any(): df.loc[mask, 'date'] = pd.to_datetime(df.loc[mask, 'temp'], unit='ms', utc=True)
+    if (~mask).any(): df.loc[~mask, 'date'] = pd.to_datetime(df.loc[~mask, date_col], utc=True, errors='coerce')
+    df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+
+    # Date Filter
+    ref_date = pd.Timestamp(f"{target_year}-12-31", tz="Europe/Oslo")
+    start_date = ref_date - pd.Timedelta(days=days_to_agg)
+    mask = (df['date'].dt.year == target_year) & (df['date'] >= start_date)
+    return df[mask]
+
+# --- 5. API & GEOJSON ---
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
     hourly_vars = ",".join(WEATHER_VARS)
@@ -176,114 +160,3 @@ def load_geojson():
     try:
         with open('elspot_areas.geojson', 'r') as f: return json.load(f)
     except: return None
-
-
-# --- ADD THIS TO utils.py ---
-
-@st.cache_data(ttl=3600)
-def aggregate_yearly_data(data_type, year):
-    """
-    Ultra-Fast: Asks MongoDB to group and sum data for the whole year.
-    Returns:
-      1. pie_df: Total MWh per Group (for Pie Chart)
-      2. line_df: Daily MWh per Group (for Line Chart)
-    """
-    # 1. Setup Collection
-    if data_type == "Production":
-        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
-        group_col = "production_group"
-    else:
-        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-        group_col = "consumption_group"
-    
-    coll = get_mongo_collection(coll_name)
-    if coll is None: return pd.DataFrame(), pd.DataFrame()
-
-    # 2. Define Time Range
-    start_str = f"{year}-01-01"
-    end_str = f"{year}-12-31"
-    # Timestamps for 2021 numbers
-    start_ts = datetime(year, 1, 1).timestamp() * 1000
-    end_ts = datetime(year, 12, 31, 23, 59).timestamp() * 1000
-
-    # 3. Match Stage (Filter Year)
-    match_stage = {
-        "$match": {
-            "$or": [
-                {"start_time": {"$gte": start_str, "$lte": end_str}},
-                {"startTime": {"$gte": start_str, "$lte": end_str}},
-                {"start_time": {"$gte": start_ts, "$lte": end_ts}},
-                {"startTime": {"$gte": start_ts, "$lte": end_ts}}
-            ]
-        }
-    }
-
-    # 4. Pipeline for Pie Chart (Total per Group)
-    pie_pipeline = [
-        match_stage,
-        {"$group": {
-            "_id": f"${group_col}", 
-            "total_mwh": {"$sum": "$value"},
-            "total_mwh_alt": {"$sum": "$quantityKwh"}
-        }}
-    ]
-    
-    # 5. Pipeline for Line Chart (Daily per Group)
-    # We project a 'day' string to group by
-    line_pipeline = [
-        match_stage,
-        {"$project": {
-            "group": f"${group_col}",
-            "mwh": {"$ifNull": ["$value", "$quantityKwh"]}, # Handle both col names
-            # Create a date string YYYY-MM-DD. 
-            # Note: This simple substring works for ISO strings. 
-            # For timestamps, it's trickier, so we might get raw rows for 2021 if needed.
-            # But let's try the string approach first as it covers 2022-2024.
-            "day_str": {"$substr": ["$start_time", 0, 10]} 
-        }},
-        {"$group": {
-            "_id": {"day": "$day_str", "grp": "$group"},
-            "daily_mwh": {"$sum": "$mwh"}
-        }}
-    ]
-
-    # Run Queries
-    pie_data = list(coll.aggregate(pie_pipeline))
-    
-    # For line data, aggregation is complex with mixed types. 
-    # Fallback: Download raw data but ONLY 3 columns (Group, Time, Value)
-    # This is still 10x faster than downloading everything.
-    projection = {group_col: 1, "start_time": 1, "startTime": 1, "value": 1, "quantityKwh": 1, "_id": 0}
-    raw_cursor = coll.find(match_stage["$match"], projection)
-    raw_df = pd.DataFrame(list(raw_cursor))
-
-    # Process Pie Data
-    pie_df = pd.DataFrame(pie_data)
-    if not pie_df.empty:
-        pie_df['mwh'] = pie_df['total_mwh'].fillna(0) + pie_df['total_mwh_alt'].fillna(0)
-        pie_df.rename(columns={'_id': 'group'}, inplace=True)
-
-    # Process Line Data (Raw Pandas)
-    if not raw_df.empty:
-        # Standardize Cols
-        if group_col in raw_df.columns: raw_df.rename(columns={group_col: 'group'}, inplace=True)
-        if "value" in raw_df.columns: raw_df.rename(columns={'value': 'mwh'}, inplace=True)
-        elif "quantityKwh" in raw_df.columns: raw_df.rename(columns={'quantityKwh': 'mwh'}, inplace=True)
-        
-        # Fix Dates
-        date_c = "start_time" if "start_time" in raw_df.columns else "startTime"
-        raw_df['date'] = pd.to_numeric(raw_df[date_c], errors='coerce')
-        mask = raw_df['date'].notna()
-        
-        # Convert
-        if mask.any(): raw_df.loc[mask, 'date'] = pd.to_datetime(raw_df.loc[mask, 'date'], unit='ms', utc=True)
-        if (~mask).any(): raw_df.loc[~mask, 'date'] = pd.to_datetime(raw_df.loc[~mask, date_c], utc=True, errors='coerce')
-        
-        raw_df['date'] = raw_df['date'].dt.tz_convert("Europe/Oslo")
-        
-        # Group by Day
-        line_df = raw_df.groupby([pd.Grouper(key='date', freq='D'), 'group'])['mwh'].sum().reset_index()
-    else:
-        line_df = pd.DataFrame()
-
-    return pie_df, line_df
