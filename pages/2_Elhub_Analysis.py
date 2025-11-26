@@ -32,8 +32,7 @@ val_col = 'daily_mwh' if 'daily_mwh' in df.columns else 'mwh'
 # --- VISUALIZATION ---
 col_left, col_right = st.columns(2)
 
-# --- LEFT: THE "PRETTY" PIE CHART ---
-# --- LEFT: THE "PRETTY" PIE CHART ---
+# --- LEFT: THE PIE CHART ---
 with col_left:
     st.subheader(f"{data_type} Share")
     
