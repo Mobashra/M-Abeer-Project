@@ -1,5 +1,6 @@
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go  # <--- Added for the "Pretty" Pie Chart
 import pandas as pd
 import utils 
 
@@ -24,21 +25,14 @@ if df.empty:
     st.warning(f"No data found for **{data_type}** in **{selected_year}**.")
     st.stop()
 
-# --- 1. SMART COLUMN DETECTION ---
-# This fixes the KeyError! It checks which column exists in your data.
-if 'daily_mwh' in df.columns:
-    val_col = 'daily_mwh' # Found the Fast Aggregated Data
-elif 'mwh' in df.columns:
-    val_col = 'mwh'       # Found the Raw Data
-else:
-    st.error(f"Data Error: Could not find value column. Available columns: {df.columns.tolist()}")
-    st.stop()
+# --- SMART COLUMN DETECTION ---
+# Handles both 'mwh' (raw) and 'daily_mwh' (aggregated) automatically
+val_col = 'daily_mwh' if 'daily_mwh' in df.columns else 'mwh'
 
 # --- VISUALIZATION ---
 col_left, col_right = st.columns(2)
 
-# LEFT: PIE CHART
-
+# --- LEFT: THE "PRETTY" PIE CHART ---
 with col_left:
     st.subheader(f"{data_type} Share")
     
@@ -46,51 +40,52 @@ with col_left:
     price_areas = sorted(df['price_area'].unique())
     curr = st.session_state["selected_price_area"]
     idx = price_areas.index(curr) if curr in price_areas else 0
+    
     selected_area = st.selectbox("Price Area:", price_areas, index=idx)
     
-    # Sync state
     if selected_area != st.session_state["selected_price_area"]:
         st.session_state["selected_price_area"] = selected_area
         st.rerun()
 
     # Filter & Aggregate
     df_area = df[df['price_area'] == selected_area]
-    
-    # Group by 'group' and sum the 'daily_mwh' (or 'mwh' if raw)
-    # We detect the column name dynamically to be safe
-    val_col = 'daily_mwh' if 'daily_mwh' in df_area.columns else 'mwh'
     pie_data = df_area.groupby('group')[val_col].sum().reset_index()
     
-    # --- STYLING ---
-    fig1 = px.pie(
-        pie_data, 
-        names='group', 
-        values=val_col,
-        title=f"Total {data_type} in {selected_area} ({selected_year})",
-        color_discrete_sequence=px.colors.qualitative.Pastel  # Your requested pastel colors
-    )
+    # Sort descending so the chart looks organized
+    pie_data = pie_data.sort_values(val_col, ascending=False)
 
-    fig1.update_traces(
-        textposition='auto',       # Puts large labels inside, small ones outside
-        textinfo='percent+label',  # Shows "Wind 2.8%"
+    # --- GRAPH OBJECTS IMPLEMENTATION ---
+    # This allows for the "Callout Lines" and precise styling you wanted
+    fig1 = go.Figure(data=[go.Pie(
+        labels=pie_data['group'],
+        values=pie_data[val_col],
+        hole=0.0, # Set to 0.4 if you prefer a Donut chart
         pull=[0.05] * len(pie_data), # Explodes slices slightly
-        marker=dict(line=dict(color='#000000', width=1)), # Thin black border
-        insidetextorientation='horizontal' # Keeps text readable inside the pie
-    )
-    
-    # Layout adjustments to fix the label bunching
+        
+        # STYLING:
+        marker=dict(
+            colors=px.colors.qualitative.Pastel, # Your requested Pastel colors
+            line=dict(color='#FFFFFF', width=2)  # Clean white borders
+        ),
+        
+        # LABELS:
+        textinfo='label+percent',
+        textposition='auto', # Automatically moves small slices outside
+    )])
+
+    # LAYOUT:
     fig1.update_layout(
-        title=dict(x=0.5, xanchor='center'),
-        font=dict(size=14),
-        showlegend=True,
-        # Add margin so the "outside" labels have room and don't get cut off
-        margin=dict(t=80, b=50, l=50, r=50),
-        legend=dict(orientation="v", yanchor="top", y=1, xanchor="right", x=1.2) # Move legend out of the way
+        title_text=f"Total {data_type} in {selected_area}",
+        title_x=0.5,
+        # Move legend to the right so it doesn't overlap labels
+        legend=dict(orientation="v", y=0.5, x=1.1, xanchor="left", yanchor="middle"),
+        # Add margins so "outside" labels aren't cut off
+        margin=dict(t=50, b=50, l=50, r=50)
     )
 
     st.plotly_chart(fig1, use_container_width=True)
 
-# RIGHT: LINE CHART
+# --- RIGHT: LINE CHART ---
 with col_right:
     st.subheader("Daily Trend")
     if not df_area.empty:
@@ -100,9 +95,10 @@ with col_right:
         if sel_groups:
             df_line = df_area[df_area['group'].isin(sel_groups)].copy()
             df_line.set_index('date', inplace=True)
-            df_line.sort_index(inplace=True) # Ensure time order
+            df_line.sort_index(inplace=True)
             
-            # Resample to Daily (Works for both Hourly and Daily input)
+            # Resample only if needed (if data is hourly)
+            # If data is already daily (from utils), this effectively does nothing but is safe
             line_data = df_line.groupby('group')[val_col].resample('D').sum().reset_index()
             
             fig2 = px.line(
