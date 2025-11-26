@@ -7,7 +7,7 @@ st.title("Anomalies: SPC & LOF")
 area = st.session_state.get("selected_price_area", "NO1")
 city = utils.CITIES[area]
 
-df = utils.fetch_weather_api(city["latitude"], city["longitude"], "2021-01-01", "2021-12-31")
+df = utils.fetch_weather_api(city["lat"], city["lon"], "2021-01-01", "2021-12-31")
 
 tab1, tab2 = st.tabs(["Temperature SPC", "Precipitation LOF"])
 
