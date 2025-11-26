@@ -32,6 +32,7 @@ val_col = 'daily_mwh' if 'daily_mwh' in df.columns else 'mwh'
 # --- VISUALIZATION ---
 col_left, col_right = st.columns(2)
 
+
 # --- LEFT: THE "PRETTY" PIE CHART ---
 with col_left:
     st.subheader(f"{data_type} Share")
@@ -61,7 +62,7 @@ with col_left:
         
         marker=dict(
             colors=px.colors.qualitative.Pastel,
-            line=dict(width=0) # <--- REMOVED WHITE BORDER
+            line=dict(width=0) # No border
         ),
         
         textinfo='label+percent',
@@ -73,9 +74,9 @@ with col_left:
     fig1.update_layout(
         title=dict(
             text=f"Total {data_type} in {selected_area}",
-            x=0.5,
-            y=0.95,  # Moved title higher to avoid overlap
-            xanchor='center',
+            x=0.0,           # <--- MOVED TO LEFT
+            y=0.95,
+            xanchor='left',  # <--- ANCHOR LEFT
             yanchor='top'
         ),
         height=500,
@@ -84,11 +85,11 @@ with col_left:
             yanchor="bottom", y=-0.1, 
             xanchor="center", x=0.5
         ),
-        # Increased top margin to give labels breathing room
         margin=dict(t=100, b=80, l=80, r=80)
     )
 
     st.plotly_chart(fig1, use_container_width=True)
+
 # --- RIGHT: LINE CHART ---
 with col_right:
     st.subheader("Daily Trend")
