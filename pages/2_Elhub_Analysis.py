@@ -38,6 +38,7 @@ else:
 col_left, col_right = st.columns(2)
 
 # LEFT: PIE CHART
+
 with col_left:
     st.subheader(f"{data_type} Share")
     
@@ -45,7 +46,6 @@ with col_left:
     price_areas = sorted(df['price_area'].unique())
     curr = st.session_state["selected_price_area"]
     idx = price_areas.index(curr) if curr in price_areas else 0
-    
     selected_area = st.selectbox("Price Area:", price_areas, index=idx)
     
     # Sync state
@@ -55,30 +55,37 @@ with col_left:
 
     # Filter & Aggregate
     df_area = df[df['price_area'] == selected_area]
+    
+    # Group by 'group' and sum the 'daily_mwh' (or 'mwh' if raw)
+    # We detect the column name dynamically to be safe
+    val_col = 'daily_mwh' if 'daily_mwh' in df_area.columns else 'mwh'
     pie_data = df_area.groupby('group')[val_col].sum().reset_index()
     
-    # --- YOUR STYLING RESTORED ---
+    # --- STYLING ---
     fig1 = px.pie(
         pie_data, 
         names='group', 
         values=val_col,
         title=f"Total {data_type} in {selected_area} ({selected_year})",
-        color_discrete_sequence=px.colors.qualitative.Pastel  # Your requested colors
+        color_discrete_sequence=px.colors.qualitative.Pastel  # Your requested pastel colors
     )
 
-    # Apply the "Pretty" styling
     fig1.update_traces(
-        textposition='auto',       # Puts small labels outside with lines (Leader Lines)
-        textinfo='percent+label',  # Matches your old code
-        pull=[0.05] * len(pie_data), # Explodes the slices (Your specific request)
-        marker=dict(line=dict(color='#000000', width=1)) # Adds thin black border for clarity
+        textposition='auto',       # Puts large labels inside, small ones outside
+        textinfo='percent+label',  # Shows "Wind 2.8%"
+        pull=[0.05] * len(pie_data), # Explodes slices slightly
+        marker=dict(line=dict(color='#000000', width=1)), # Thin black border
+        insidetextorientation='horizontal' # Keeps text readable inside the pie
     )
     
-    # Layout adjustments from your old code
+    # Layout adjustments to fix the label bunching
     fig1.update_layout(
-        title=dict(x=0.5, xanchor='center'), # Centers the title
-        font=dict(size=13),
-        margin=dict(t=50, b=20, l=20, r=20)
+        title=dict(x=0.5, xanchor='center'),
+        font=dict(size=14),
+        showlegend=True,
+        # Add margin so the "outside" labels have room and don't get cut off
+        margin=dict(t=80, b=50, l=50, r=50),
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="right", x=1.2) # Move legend out of the way
     )
 
     st.plotly_chart(fig1, use_container_width=True)
