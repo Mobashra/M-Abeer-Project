@@ -25,19 +25,61 @@ def get_mongo_collection(collection_name=None):
         if collection_name:
             return db[collection_name]
         else:
-            return db[st.secrets["mongo"]["collection"]]
+            # Fallback if key is missing
+            return db[st.secrets["mongo"].get("collection", "production_mba_hour")]
     except Exception as e:
         st.error(f"MongoDB Connection Error: {e}")
         return None
 
-# --- 3. ULTRA-FAST YEAR LOADER (AGGREGATED) ---
-# This is the function your Page 2 is looking for!
+# --- 3. LOADERS ---
+
 @st.cache_data(ttl=3600)
-def get_year_data(data_type, year):
+def load_yearly_data(data_type, year):
     """
-    Uses MongoDB Aggregation to group hourly data into DAILY data on the server.
+    Fetches raw data for ONE year. Used by Page 2 (Elhub Data) and Page 3 (STL).
     """
     # 1. Select Collection
+    if data_type == "Production":
+        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        group_col = "production_group"
+    else:
+        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        group_col = "consumption_group"
+
+    coll = get_mongo_collection(coll_name)
+    if coll is None: return pd.DataFrame()
+
+    # 2. Date Filter (Native MongoDB Dates)
+    start_date = datetime(year, 1, 1)
+    end_date = datetime(year, 12, 31, 23, 59, 59)
+    
+    query = {"start_time": {"$gte": start_date, "$lte": end_date}}
+    
+    # 3. Fetch (Limit 300k to prevent crashes)
+    projection = {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}
+    data = list(coll.find(query, projection).limit(300000))
+    df = pd.DataFrame(data)
+    
+    if df.empty: return df
+
+    # 4. Cleanup
+    # Rename specific group column to generic 'group'
+    df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
+    df['group'] = df['group'].astype(str).fillna("Unknown")
+    
+    # Convert timezone
+    df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+    
+    return df
+
+# Alias for backward compatibility if any page still uses 'get_year_data'
+get_year_data = load_yearly_data 
+
+@st.cache_data(ttl=3600)
+def load_map_data(target_year, days_to_agg, data_type, selected_group):
+    """
+    Server-side aggregation for the Home Page Map.
+    """
     if data_type == "Production":
         coll = get_mongo_collection(st.secrets["mongo"].get("collection", "production_mba_hour"))
         group_col = "production_group"
@@ -45,53 +87,8 @@ def get_year_data(data_type, year):
         coll = get_mongo_collection(st.secrets["mongo"].get("collection_cons", "consumption_mba_hour"))
         group_col = "consumption_group"
 
-    if coll is None: return pd.DataFrame()
-
-    # 2. Define Date Range
-    start_date = datetime(year, 1, 1)
-    end_date = datetime(year, 12, 31, 23, 59, 59)
-
-    # 3. Aggregation Pipeline
-    pipeline = [
-        {"$match": {"start_time": {"$gte": start_date, "$lte": end_date}}},
-        {"$project": {
-            "price_area": 1,
-            "group": f"${group_col}",
-            "value": 1,
-            "day": {"$dateToString": {"format": "%Y-%m-%d", "date": "$start_time", "timezone": "Europe/Oslo"}}
-        }},
-        {"$group": {
-            "_id": {"area": "$price_area", "grp": "$group", "day": "$day"},
-            "daily_mwh": {"$sum": "$value"}
-        }}
-    ]
-
-    # Execute
-    data = list(coll.aggregate(pipeline))
-    df = pd.DataFrame(data)
-    
-    if df.empty: return df
-
-    # 4. Flatten
-    df['price_area'] = df['_id'].apply(lambda x: x['area'])
-    df['group'] = df['_id'].apply(lambda x: x['grp'])
-    df['date'] = pd.to_datetime(df['_id'].apply(lambda x: x['day']))
-    df.drop(columns=['_id'], inplace=True)
-    
-    return df
-
-# --- 4. MAP LOADER (For Home Page) ---
-@st.cache_data(ttl=3600)
-def load_map_data(target_year, days_to_agg, data_type, selected_group):
-    if data_type == "Production":
-        coll = get_mongo_collection(st.secrets["mongo"]["collection"])
-        group_col = "production_group"
-    else:
-        coll = get_mongo_collection(st.secrets["mongo"]["collection_cons"])
-        group_col = "consumption_group"
-
-    end_date = pd.Timestamp(f"{target_year}-12-31 23:59", tz="Europe/Oslo").tz_convert("UTC")
-    start_date = end_date - pd.Timedelta(days=days_to_agg)
+    end_date = datetime(target_year, 12, 31, 23, 59)
+    start_date = end_date - timedelta(days=days_to_agg)
 
     pipeline = [
         {"$match": {
@@ -112,11 +109,34 @@ def load_map_data(target_year, days_to_agg, data_type, selected_group):
     df['price_area_map'] = df['price_area'].astype(str).str.replace("NO", "NO ")
     return df
 
+# --- 4. LEGACY LOADER ---
+@st.cache_data(ttl=600)
+def load_elhub_data(year_filter=None):
+    """Legacy loader needed for some older page logic."""
+    coll = get_mongo_collection()
+    if coll is None: return pd.DataFrame()
+    
+    query = {}
+    if year_filter:
+        s = datetime(year_filter, 1, 1)
+        e = datetime(year_filter, 12, 31, 23, 59)
+        query = {"start_time": {"$gte": s, "$lte": e}}
+
+    data = list(coll.find(query, {"_id": 0}))
+    df = pd.DataFrame(data)
+    
+    if not df.empty:
+        df.rename(columns={"start_time": "date", "value": "mwh", "production_group": "group"}, inplace=True)
+        if 'date' in df.columns:
+            df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+            
+    return df
+
 # --- 5. API & GEOJSON ---
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
-    vars = "temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,wind_direction_10m"
-    url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&hourly={vars}&timezone=Europe/Oslo"
+    hourly_vars = ",".join(WEATHER_VARS)
+    url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&hourly={hourly_vars}&timezone=Europe/Oslo"
     try:
         resp = requests.get(url, timeout=60); resp.raise_for_status(); js = resp.json()
         if "hourly" not in js: return pd.DataFrame()
