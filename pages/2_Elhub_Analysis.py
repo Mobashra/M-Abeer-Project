@@ -51,52 +51,44 @@ with col_left:
     pie_data = df_area.groupby('group')[val_col].sum().reset_index()
     pie_data = pie_data.sort_values(val_col, ascending=False)
 
-    # --- PIE CHART WITH ROTATION ---
+    # --- PIE CHART ---
     fig1 = go.Figure(data=[go.Pie(
         labels=pie_data['group'],
         values=pie_data[val_col],
         hole=0.0,
-        
-        # ROTATION: Turns the "seam" (where tiny slices are) to 45 degrees.
-        # This moves the labels away from the top center, giving them room to stack.
         rotation=45, 
-        
         pull=[0.05] * len(pie_data),
         
         marker=dict(
             colors=px.colors.qualitative.Pastel,
-            line=dict(color='#FFFFFF', width=2)
+            line=dict(width=0) # <--- REMOVED WHITE BORDER
         ),
         
-        # LABELS
         textinfo='label+percent',
-        textposition='auto', # Smart positioning
-        
-        # Force labels to be Horizontal (easier to read)
+        textposition='auto',
         insidetextorientation='horizontal'
     )])
 
-    # LAYOUT
+    # LAYOUT ADJUSTMENTS
     fig1.update_layout(
-        title_text=f"Total {data_type} in {selected_area}",
-        title_x=0.5,
-        
-        # Set height slightly larger to prevent label crunching
+        title=dict(
+            text=f"Total {data_type} in {selected_area}",
+            x=0.5,
+            y=0.95,  # Moved title higher to avoid overlap
+            xanchor='center',
+            yanchor='top'
+        ),
         height=500,
-        
-        # Move Legend to BOTTOM to free up side space for callout lines
         legend=dict(
             orientation="h", 
             yanchor="bottom", y=-0.1, 
             xanchor="center", x=0.5
         ),
-        
-        # Add margins specifically for the labels
-        margin=dict(t=80, b=80, l=80, r=80)
+        # Increased top margin to give labels breathing room
+        margin=dict(t=100, b=80, l=80, r=80)
     )
 
     st.plotly_chart(fig1, use_container_width=True)
-
 # --- RIGHT: LINE CHART ---
 with col_right:
     st.subheader("Daily Trend")
