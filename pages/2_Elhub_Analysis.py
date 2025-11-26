@@ -33,6 +33,7 @@ val_col = 'daily_mwh' if 'daily_mwh' in df.columns else 'mwh'
 col_left, col_right = st.columns(2)
 
 # --- LEFT: THE "PRETTY" PIE CHART ---
+# --- LEFT: THE "PRETTY" PIE CHART ---
 with col_left:
     st.subheader(f"{data_type} Share")
     
@@ -50,39 +51,42 @@ with col_left:
     # Filter & Aggregate
     df_area = df[df['price_area'] == selected_area]
     pie_data = df_area.groupby('group')[val_col].sum().reset_index()
-    
-    # Sort descending so the chart looks organized
     pie_data = pie_data.sort_values(val_col, ascending=False)
 
-    # --- GRAPH OBJECTS IMPLEMENTATION ---
-    # This allows for the "Callout Lines" and precise styling you wanted
+    # --- SMALLER PIE CHART ---
     fig1 = go.Figure(data=[go.Pie(
         labels=pie_data['group'],
         values=pie_data[val_col],
-        hole=0.0, # Set to 0.4 if you prefer a Donut chart
-        pull=[0.05] * len(pie_data), # Explodes slices slightly
+        hole=0.0,
+        pull=[0.05] * len(pie_data), 
         
-        # STYLING:
+        # STYLING
         marker=dict(
-            colors=px.colors.qualitative.Pastel, # Your requested Pastel colors
-            line=dict(color='#FFFFFF', width=2)  # Clean white borders
+            colors=px.colors.qualitative.Pastel,
+            line=dict(color='#FFFFFF', width=2)
         ),
         
-        # LABELS:
+        # LABELS
         textinfo='label+percent',
-        textposition='auto', # Automatically moves small slices outside
+        textposition='auto',
     )])
 
-    # LAYOUT:
+    # LAYOUT ADJUSTMENTS FOR SIZE
     fig1.update_layout(
         title_text=f"Total {data_type} in {selected_area}",
         title_x=0.5,
-        # Move legend to the right so it doesn't overlap labels
-        legend=dict(orientation="v", y=0.5, x=1.1, xanchor="left", yanchor="middle"),
-        # Add margins so "outside" labels aren't cut off
-        margin=dict(t=50, b=50, l=50, r=50)
+        
+        # 1. Set a fixed smaller height (e.g., 400px)
+        height=400,
+        
+        # 2. Add margins to "squeeze" the chart smaller
+        margin=dict(t=50, b=50, l=20, r=100), 
+        
+        # 3. Move Legend to avoid overcrowding
+        legend=dict(orientation="v", y=0.5, x=1.0, xanchor="left", yanchor="middle")
     )
 
+    # Display
     st.plotly_chart(fig1, use_container_width=True)
 
 # --- RIGHT: LINE CHART ---
