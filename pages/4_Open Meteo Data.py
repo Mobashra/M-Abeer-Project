@@ -11,7 +11,7 @@ city = utils.CITIES[area]
 st.write(f"Data for **{city['city']} ({area})**")
 
 # Fetch
-df = utils.fetch_weather_api(city["latitude"], city["longitude"], "2021-01-01", "2021-12-31")
+df = utils.fetch_weather_api(city["lat"], city["lon"], "2021-01-01", "2021-12-31")
 
 if df.empty: st.stop()
 
