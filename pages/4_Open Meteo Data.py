@@ -16,10 +16,7 @@ if "selected_price_area" not in st.session_state:
 current_area = st.session_state["selected_price_area"]
 coords = st.session_state["selected_coords"]
 
-st.info(f"""
-**Analysis Scope:**
-* **Location:** {current_area} ({coords['lat']:.2f}, {coords['lon']:.2f})
-""")
+st.info(f"**Analysis Scope:** {current_area} ({coords['lat']:.2f}, {coords['lon']:.2f})")
 
 # --- 2. FETCH DATA (FULL HISTORY) ---
 with st.spinner("Fetching weather history (2021-2024)..."):
@@ -68,41 +65,36 @@ with tab1:
         st.warning(f"No data available for {stat_year}.")
 
 # ==================================================
-# TAB 2: ADVANCED VISUALIZATION (FIXED)
+# TAB 2: ADVANCED VISUALIZATION (ARROWS FIXED)
 # ==================================================
 with tab2:
     st.subheader("Interactive Weather Plot")
     
     # --- CONTROLS ---
-    c1, c2 = st.columns([3, 1])
+    c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
-        # Create Year-Month strings for slider
+        # Slider
         df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
         unique_months = sorted(df_full['YYYY-MM'].unique())
         
-        # FIX: Default to Jan 2021 - Feb 2021 (First 2 months)
-        default_start = unique_months[0] # Jan 2021
-        default_end = unique_months[1]   # Feb 2021
-        
+        # Default: Jan 2021 - Mar 2021
         start_month, end_month = st.select_slider(
             "Select Time Range",
             options=unique_months,
-            value=(default_start, default_end) 
+            value=(unique_months[0], unique_months[2]) 
         )
-        
+    
     with c2:
-        normalize = st.checkbox("Normalize (0-1 scale)", value=False)
-        select_all = st.checkbox("Select All Variables")
+        normalize = st.checkbox("Normalize (0-1 scale)", value=True)
+        show_arrows = st.checkbox("Show Wind Direction", value=True) # Explicit toggle
 
-    # Variable Selection
-    default_cols = ["temperature_2m", "precipitation"]
-    if select_all:
-        default_cols = utils.WEATHER_VARS
-        
-    selected_cols = st.multiselect("Select variables:", utils.WEATHER_VARS, default=default_cols)
+    with c3:
+        # Variable Selection
+        default_cols = ["temperature_2m", "precipitation"]
+        selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=default_cols)
 
     # --- FILTER DATA ---
-    # FIX: Use MonthEnd(0) so it stops at the END of the selected month, not the NEXT month
+    # Use MonthEnd(0) to stop exactly at the end of the selected month
     start_date = pd.to_datetime(start_month)
     end_date = (pd.to_datetime(end_month) + pd.offsets.MonthEnd(0)) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     
@@ -130,9 +122,7 @@ with tab2:
 
     # 1. Plot Lines
     for col in selected_cols:
-        # Don't plot wind direction as a jagged line (it looks bad), we use arrows instead
-        if col == "wind_direction_10m": 
-            continue 
+        if col == "wind_direction_10m": continue # Never plot direction as a line
         
         fig.add_trace(go.Scatter(
             x=filtered_df['time'], 
@@ -142,31 +132,32 @@ with tab2:
             line=dict(width=1.5, color=colors.get(col, "black"))
         ))
 
-    # 2. Plot Wind Arrows (FIXED VISIBILITY)
-    # Logic: Show arrows if "wind_direction_10m" OR "wind_speed_10m" is selected
-    if "wind_direction_10m" in selected_cols or "wind_speed_10m" in selected_cols:
+    # 2. Plot Wind Arrows (THE FIX)
+    if show_arrows:
+        # Downsample: 1 arrow every ~24 hours (or dynamic based on zoom)
+        # If range is short (1 month), show more arrows. If long (3 years), show fewer.
+        total_hours = len(filtered_df)
+        step = max(1, total_hours // 30) # Aim for ~30 arrows total across the chart
         
-        # Downsample: Plot 1 arrow every ~20 points to avoid clutter
-        step = max(1, len(filtered_df) // 30)
         arrow_data = filtered_df.iloc[::step]
         
-        # Position arrows at y=0 (or slightly below)
-        y_pos = 0 if normalize else arrow_data[selected_cols[0]].min()
+        # Place arrows at y=-0.1 (Below the 0 line so they don't overlap data)
+        y_pos = -0.1 if normalize else filtered_df[selected_cols[0]].min() * 0.9
         
         fig.add_trace(go.Scatter(
             x=arrow_data['time'],
             y=[y_pos] * len(arrow_data), 
             mode='markers',
             marker=dict(
-                symbol="arrow-up",
-                size=12,
-                angle=arrow_data['wind_direction_10m'], # Rotates the arrow 0-360
+                symbol="arrow-up",  # The base shape
+                size=12,            # Make them visible
+                angle=arrow_data['wind_direction_10m'], # Rotates based on data (0=N, 90=E)
                 color="teal",
                 line=dict(width=1, color="black")
             ),
-            name="Wind Direction (Arrows)",
+            name="Wind Direction",
             hoverinfo="text",
-            hovertext=arrow_data['wind_direction_10m'].astype(str) + "°"
+            hovertext=arrow_data['time'].dt.strftime('%Y-%m-%d %H:00') + "<br>Dir: " + arrow_data['wind_direction_10m'].astype(str) + "°"
         ))
 
     fig.update_layout(
@@ -174,7 +165,8 @@ with tab2:
         template="plotly_white",
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
         yaxis=dict(title="Normalized Value (0-1)" if normalize else "Value"),
-        margin=dict(l=40, r=40, t=80, b=40),
+        # Add padding at bottom for the arrows
+        margin=dict(l=40, r=40, t=80, b=80),
         title=f"Weather Trends ({start_month} to {end_month})"
     )
 
