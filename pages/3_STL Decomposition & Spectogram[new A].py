@@ -19,7 +19,6 @@ with col2:
     selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
 
 # --- 2. LOAD DATA (RAW HOURLY) ---
-# We MUST use the raw loader here. STL needs hourly resolution.
 with st.spinner(f"Fetching hourly resolution data for {selected_year}..."):
     df = utils.load_yearly_data(data_type, selected_year)
 
@@ -59,12 +58,28 @@ if series.empty:
 # --- 5. VISUALIZATION TABS ---
 tab1, tab2 = st.tabs(["STL Decomposition", "Spectrogram"])
 
+# --- TAB 1: STL ---
 with tab1:
     st.markdown("### Seasonal-Trend Decomposition (STL)")
-    st.caption("Deconstructs the signal into Trend (Long term), Seasonal (Daily/Weekly), and Residual (Noise).")
     
+    # --- STL PARAMETERS (Required by Part 3) ---
+    with st.expander("⚙️ STL Settings", expanded=False):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            # Period: Default 168 (Weekly cycle for hourly data)
+            period = st.number_input("Period Length", min_value=2, value=168, step=1)
+        with c2:
+            # Seasonal Smoother: Must be odd
+            seasonal = st.number_input("Seasonal Smoother", min_value=3, value=13, step=2)
+        with c3:
+            # Trend Smoother: Must be odd (Default 169 is ~1 week smoothing)
+            trend = st.number_input("Trend Smoother", min_value=3, value=169, step=2)
+        with c4:
+            robust = st.checkbox("Robust Fitting", value=True)
+
     try:
-        res = af.compute_stl(series)
+        # Pass parameters to function
+        res = af.compute_stl(series, period=period, seasonal=seasonal, trend=trend, robust=robust)
         
         fig = make_subplots(rows=4, cols=1, shared_xaxes=True, 
                             subplot_titles=("Original", "Trend", "Seasonal", "Residual"))
@@ -76,15 +91,26 @@ with tab1:
         
         fig.update_layout(height=800, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
+        
     except Exception as e:
         st.error(f"STL Failed: {e}")
 
+# --- TAB 2: SPECTROGRAM ---
 with tab2:
     st.markdown("### Frequency Analysis")
-    st.caption("Shows repeating patterns. Bright yellow lines indicate strong cycles.")
     
+    # --- SPECTROGRAM PARAMETERS (Required by Part 3) ---
+    with st.expander("⚙️ Spectrogram Settings", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            win_len = st.number_input("Window Length", min_value=10, max_value=1000, value=256, step=10)
+        with c2:
+            # Overlap should be less than window length
+            overlap = st.number_input("Window Overlap", min_value=0, max_value=win_len-1, value=int(win_len/2), step=10)
+
     try:
-        f, t, Sxx = af.compute_spectrogram(series)
+        # Pass parameters to function
+        f, t, Sxx = af.compute_spectrogram(series, window_length=win_len, overlap=overlap)
         
         fig = go.Figure(data=go.Heatmap(
             z=Sxx, x=t, y=f, 
@@ -95,7 +121,7 @@ with tab2:
         fig.update_layout(
             title=f"Spectrogram: {selected_group} in {current_area}",
             yaxis_title="Frequency (cycles/hour)",
-            xaxis_title="Time (Days)",
+            xaxis_title="Time",
             # Zoom in on 0 - 0.1 to see Daily (0.04) and Weekly (0.006) cycles clearly
             yaxis_range=[0, 0.1] 
         )
