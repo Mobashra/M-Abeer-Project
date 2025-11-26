@@ -1,104 +1,121 @@
 import streamlit as st
-import plotly.express as px
-import utils
-import calendar
+import plotly.graph_objects as go
 import pandas as pd
+import utils
+from datetime import datetime
 
-st.set_page_config(page_title="Weather Statistics", layout="wide")
-st.title("🌤️ Open Meteo Weather Data")
+st.set_page_config(page_title="Weather Visualization", layout="wide")
 
-# --- 1. CONTROLS ---
-col1, col2 = st.columns(2)
+st.title("Weather Data Visualisation (2021–2024)")
 
-with col1:
-    selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
+# --- 1. GET LOCATION & DATA ---
+if "selected_price_area" not in st.session_state:
+    st.session_state["selected_price_area"] = "NO1"
+    default = utils.CITIES["NO1"]
+    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
 
-with col2:
-    all_areas = sorted(list(utils.CITIES.keys()))
-    default_area = st.session_state.get("selected_price_area", "NO1")
-    if default_area not in all_areas: default_area = "NO1"
-    selected_area = st.selectbox("Select Price Area", all_areas, index=all_areas.index(default_area))
+current_area = st.session_state["selected_price_area"]
+coords = st.session_state["selected_coords"]
 
-# --- 2. FETCH DATA ---
-city = utils.CITIES[selected_area]
-st.caption(f"Data for **{city['city']} ({selected_area})** @ {city['lat']}, {city['lon']}")
+# --- 2. BLUE CONTEXT BOX ---
+st.info(f"""
+**Analysis Scope** (by the explorer page configuration):
+* **Weather Location (Price Area):** {current_area} ({coords['lat']:.2f}, {coords['lon']:.2f})
+""")
 
-with st.spinner(f"Fetching weather data for {selected_year}..."):
-    start_date = f"{selected_year}-01-01"
-    end_date = f"{selected_year}-12-31"
-    df = utils.fetch_weather_api(city["lat"], city["lon"], start_date, end_date)
+# --- 3. FETCH FULL HISTORY (2021-2024) ---
+# We fetch the full range once and cache it. This allows the slider to be instant.
+with st.spinner("Fetching 4-year weather history..."):
+    df = utils.fetch_weather_api(coords['lat'], coords['lon'], "2021-01-01", "2024-12-31")
 
 if df.empty:
     st.error("No weather data available.")
     st.stop()
 
-df["month"] = df["time"].dt.month
+# --- 4. CONTROLS ---
+# Variable Selector
+all_cols = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m"]
+selected_cols = st.multiselect("Select columns", all_cols, default=all_cols)
 
-# --- 3. TABS ---
-tab1, tab2 = st.tabs(["📊 Data Table & Trends", "📈 Interactive Plot"])
+# Create Year-Month list for Slider
+# We convert dates to "YYYY-MM" strings for the slider labels
+df['YYYY-MM'] = df['time'].dt.to_period('M').astype(str)
+unique_months = sorted(df['YYYY-MM'].unique())
 
-# --- TAB 1: TABLE ---
-with tab1:
-    st.subheader(f"Weather Statistics ({selected_year})")
-    summary_data = []
-    for var in utils.WEATHER_VARS:
-        summary_data.append({
-            "Variable": var,
-            "Min": df[var].min(),
-            "Max": df[var].max(),
-            "Average": round(df[var].mean(), 2),
-            "Annual Trend": df[var].tolist()
-        })
-    
-    st.dataframe(
-        pd.DataFrame(summary_data), 
-        column_config={
-            "Annual Trend": st.column_config.LineChartColumn(
-                f"Trend ({selected_year})", y_min=0, y_max=None
-            )
-        },
-        hide_index=True, 
-        use_container_width=True
-    )
+# Slider Logic
+start_month, end_month = st.select_slider(
+    "Select Month Range (Year-Month)",
+    options=unique_months,
+    value=(unique_months[-12], unique_months[-1]) # Default to last year
+)
 
-# --- TAB 2: PLOT (UPDATED) ---
-with tab2:
-    st.subheader("Variable Visualization")
-    
-    c1, c2 = st.columns([2, 1])
-    
-    with c1:
-        months = list(calendar.month_name)[1:]
-        m_range = st.select_slider("Select Month Range", options=months, value=(months[0], months[-1]))
-        start_idx = months.index(m_range[0]) + 1
-        end_idx = months.index(m_range[1]) + 1
-    
-    with c2:
-        # Added "All Variables" option
-        plot_options = ["All Variables"] + utils.WEATHER_VARS
-        selected_var = st.selectbox("Select Variable to Plot", plot_options)
-    
-    # Filter Data
-    subset = df[(df["month"] >= start_idx) & (df["month"] <= end_idx)]
-    
-    # Determine Y-Axis
-    if selected_var == "All Variables":
-        y_data = utils.WEATHER_VARS  # Plotly will plot multiple lines
-        title_text = "All Weather Variables"
-    else:
-        y_data = selected_var
-        title_text = selected_var
+# Normalization Checkbox
+normalize = st.checkbox("Normalize numeric columns (0-1 scale)", value=True)
 
-    # Plot
-    fig = px.line(
-        subset, 
-        x='time', 
-        y=y_data, 
-        title=f"{title_text} ({m_range[0]} - {m_range[1]} {selected_year})",
-        template="plotly_white"
-    )
-    
-    # Move legend to top so it doesn't squash the chart
-    fig.update_layout(legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"))
-    
-    st.plotly_chart(fig, use_container_width=True)
+# --- 5. DATA PROCESSING ---
+# Filter by Date Range
+start_date = pd.to_datetime(start_month)
+# For end date, we want the end of that month. Trick: go to next month day 1, subtract 1 sec.
+end_date = (pd.to_datetime(end_month) + pd.offsets.MonthBegin(1)) + pd.offsets.MonthEnd(1)
+
+mask = (df['time'] >= start_date) & (df['time'] <= end_date)
+filtered_df = df.loc[mask].copy()
+
+# Normalization Logic
+if normalize:
+    for col in selected_cols:
+        min_val = filtered_df[col].min()
+        max_val = filtered_df[col].max()
+        if max_val != min_val:
+            filtered_df[col] = (filtered_df[col] - min_val) / (max_val - min_val)
+
+# --- 6. PLOTTING ---
+st.subheader(f"All columns for {start_month} – {end_month}")
+
+fig = go.Figure()
+
+# Plot Lines
+colors = {"temperature_2m": "#1f77b4", "precipitation": "#2ca02c", "wind_speed_10m": "#ff7f0e", "wind_gusts_10m": "#7f7f7f"}
+
+for col in selected_cols:
+    fig.add_trace(go.Scatter(
+        x=filtered_df['time'], 
+        y=filtered_df[col], 
+        mode='lines', 
+        name=col,
+        line=dict(width=1.5, color=colors.get(col, "black"))
+    ))
+
+# --- WIND DIRECTION ARROWS (The Advanced Feature) ---
+# We don't want 1 arrow per hour (too messy). We downsample to 1 arrow every ~12-24 hours depending on zoom.
+# Calculate step size based on total data points to show ~30-50 arrows max
+step = max(1, len(filtered_df) // 40)
+arrow_data = filtered_df.iloc[::step]
+
+# Plot Arrows (using Markers)
+# Symbol 'arrow-up' rotated by the wind direction angle
+fig.add_trace(go.Scatter(
+    x=arrow_data['time'],
+    y=[-0.05] * len(arrow_data), # Place them just below the graph (y=0)
+    mode='markers',
+    marker=dict(
+        symbol="arrow-up",
+        size=10,
+        angle=arrow_data['wind_direction_10m'], # Rotates the arrow
+        color="teal"
+    ),
+    name="Wind Direction",
+    hoverinfo="skip" # Don't show hover tooltip for arrows
+))
+
+# Layout Styling
+fig.update_layout(
+    height=600,
+    template="plotly_white",
+    legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
+    yaxis=dict(title="Normalized Value (0-1)" if normalize else "Value", showgrid=True, gridcolor='#f0f0f0'),
+    xaxis=dict(showgrid=False),
+    margin=dict(l=40, r=40, t=40, b=80)
+)
+
+st.plotly_chart(fig, use_container_width=True)
