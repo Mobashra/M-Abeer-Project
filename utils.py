@@ -49,7 +49,7 @@ def load_yearly_data(data_type, year):
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    # 2. Date Filter (Native MongoDB Dates)
+    # 2. Date Filter 
     start_date = datetime(year, 1, 1)
     end_date = datetime(year, 12, 31, 23, 59, 59)
     
@@ -63,16 +63,16 @@ def load_yearly_data(data_type, year):
     if df.empty: return df
 
     # 4. Cleanup
-    # Rename specific group column to generic 'group'
     df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
     df['group'] = df['group'].astype(str).fillna("Unknown")
     
-    # Convert timezone
-    df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+    # --- FIX FOR TIMEZONE ERROR ---
+    # We force the data to be UTC-aware first, THEN convert to Oslo
+    df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
     
     return df
 
-# Alias for backward compatibility if any page still uses 'get_year_data'
+# Alias for backward compatibility
 get_year_data = load_yearly_data 
 
 @st.cache_data(ttl=3600)
@@ -128,7 +128,8 @@ def load_elhub_data(year_filter=None):
     if not df.empty:
         df.rename(columns={"start_time": "date", "value": "mwh", "production_group": "group"}, inplace=True)
         if 'date' in df.columns:
-            df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
+            # FIX: Force UTC-aware before conversion
+            df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
             
     return df
 
@@ -141,6 +142,8 @@ def fetch_weather_api(lat, lon, start_date, end_date):
         resp = requests.get(url, timeout=60); resp.raise_for_status(); js = resp.json()
         if "hourly" not in js: return pd.DataFrame()
         df = pd.DataFrame(js["hourly"])
+        
+        # API data usually comes as simple strings, so we convert safely
         df["time"] = pd.to_datetime(df["time"])
         return df
     except: return pd.DataFrame()
