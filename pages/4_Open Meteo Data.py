@@ -18,7 +18,7 @@ coords = st.session_state["selected_coords"]
 
 st.info(f"**Analysis Scope:** {current_area} ({coords['lat']:.2f}, {coords['lon']:.2f})")
 
-# --- 2. FETCH FULL HISTORY ---
+# --- 2. FETCH DATA ---
 with st.spinner("Fetching weather history (2021-2024)..."):
     df_full = utils.fetch_weather_api(coords['lat'], coords['lon'], "2021-01-01", "2024-12-31")
 
@@ -32,11 +32,10 @@ df_full['Year'] = df_full['time'].dt.year
 tab1, tab2 = st.tabs(["📊 Statistics Table", "📈 Advanced Visualization"])
 
 # ==================================================
-# TAB 1: STATISTICS (Year Specific)
+# TAB 1: STATISTICS
 # ==================================================
 with tab1:
     st.subheader("Yearly Statistics")
-    # Moved Year Selector INSIDE Tab 1 so it doesn't affect Tab 2
     stat_year = st.selectbox("Select Year for Statistics:", [2021, 2022, 2023, 2024], index=0)
     
     df_stats = df_full[df_full['Year'] == stat_year].copy()
@@ -62,36 +61,50 @@ with tab1:
         st.warning("No data.")
 
 # ==================================================
-# TAB 2: VISUALIZATION (Full History + Custom Range)
+# TAB 2: VISUALIZATION
 # ==================================================
 with tab2:
     st.subheader("Interactive Weather Plot")
     
-    # 1. TIME RANGE SLIDER (Full Width)
-    df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
-    unique_months = sorted(df_full['YYYY-MM'].unique())
-    
-    # Default: Jan 2021 to Feb 2021 (First 2 months only)
-    start_month, end_month = st.select_slider(
-        "Select Time Range",
-        options=unique_months,
-        value=(unique_months[0], unique_months[1]) 
-    )
-
-    # 2. VARIABLE SELECTOR (New Line, Full Width)
-    # Default: Select ALL numeric variables (exclude direction which is special)
-    default_vars = [c for c in utils.WEATHER_VARS if c != "wind_direction_10m"]
-    selected_cols = st.multiselect("Select Variables to Plot:", utils.WEATHER_VARS, default=default_vars)
-
-    # 3. CHECKBOXES (Separate Columns)
-    c1, c2, c3 = st.columns([1, 1, 2])
+    # --- CONTROLS ---
+    c1, c2, c3 = st.columns([3, 1, 1])
     with c1:
-        normalize = st.checkbox("Normalize (0-1 scale)", value=False)
+        df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
+        unique_months = sorted(df_full['YYYY-MM'].unique())
+        
+        # Default: Jan 2021 to Feb 2021
+        start_month, end_month = st.select_slider(
+            "Select Time Range",
+            options=unique_months,
+            value=(unique_months[0], unique_months[1]) 
+        )
+
     with c2:
-        show_arrows = st.checkbox("Show Wind Arrows", value=False)
+        # Checkboxes
+        normalize = st.checkbox("Normalize (0-1)", value=False)
+        select_all = st.checkbox("Select All Variables", value=False)
+
+    with c3:
+        # Logic: If "Select All" is checked, default to everything (except direction)
+        # If unchecked, default to just Temp/Precip
+        
+        # Exclude wind_direction from line plots (it looks messy as a line)
+        plot_vars = [v for v in utils.WEATHER_VARS if v != "wind_direction_10m"]
+        
+        if select_all:
+            default_selection = plot_vars
+        else:
+            default_selection = ["temperature_2m", "precipitation"]
+            
+        # Note: Changing 'key' forces the widget to update when 'select_all' changes
+        selected_cols = st.multiselect(
+            "Variables:", 
+            utils.WEATHER_VARS, 
+            default=default_selection,
+            key=f"vars_{select_all}" 
+        )
 
     # --- FILTER DATA ---
-    # Use MonthEnd(0) to get the exact last day of the end month
     start_date = pd.to_datetime(start_month)
     end_date = (pd.to_datetime(end_month) + pd.offsets.MonthEnd(0)) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     
@@ -128,14 +141,28 @@ with tab2:
             line=dict(width=1.5, color=colors.get(col, "black"))
         ))
 
-    # 2. Arrows (Only if checked)
-    if show_arrows and "wind_direction_10m" in df_full.columns:
-        # Downsample arrows based on zoom level
+    # 2. Arrows (ALWAYS ON if data exists)
+    if "wind_direction_10m" in df_full.columns:
+        # Downsample
         step = max(1, len(df_plot) // 30)
         arrow_data = df_plot.iloc[::step].copy()
         
         # Position arrows below chart
-        y_pos = -0.15 if normalize else df_plot[selected_cols[0]].min()
+        if normalize:
+            y_pos = -0.15
+        else:
+            # Find global min of currently plotted lines to place arrows underneath
+            if selected_cols:
+                vals = df_plot[selected_cols].select_dtypes(include=np.number).values
+                # Handle case where all values might be NaN or empty
+                if vals.size > 0:
+                    min_val = np.nanmin(vals)
+                    range_val = np.nanmax(vals) - min_val
+                    y_pos = min_val - (range_val * 0.1) if range_val > 0 else min_val - 1
+                else:
+                    y_pos = 0
+            else:
+                y_pos = 0
         
         # Rotate 180 to point with wind
         arrow_angles = (arrow_data['wind_direction_10m'] + 180) % 360
