@@ -1,6 +1,6 @@
 import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go  # <--- Added for the "Pretty" Pie Chart
+import plotly.graph_objects as go
 import pandas as pd
 import utils 
 
@@ -25,19 +25,20 @@ if df.empty:
     st.warning(f"No data found for **{data_type}** in **{selected_year}**.")
     st.stop()
 
-# --- SMART COLUMN DETECTION ---
-# Handles both 'mwh' (raw) and 'daily_mwh' (aggregated) automatically
-val_col = 'daily_mwh' if 'daily_mwh' in df.columns else 'mwh'
+# Ensure 'price_area' column exists
+if 'price_area' not in df.columns:
+    st.error("Data missing 'price_area' column. Cannot continue.")
+    st.stop()
+
+val_col = 'mwh'  # Use 'mwh' consistently
 
 # --- VISUALIZATION ---
 col_left, col_right = st.columns(2)
 
-
-# --- LEFT: THE "PRETTY" PIE CHART ---
+# --- LEFT: PIE CHART ---
 with col_left:
     st.subheader(f"{data_type} Share")
     
-    # Area Selector
     price_areas = sorted(df['price_area'].unique())
     curr = st.session_state["selected_price_area"]
     idx = price_areas.index(curr) if curr in price_areas else 0
@@ -47,50 +48,37 @@ with col_left:
         st.session_state["selected_price_area"] = selected_area
         st.rerun()
 
-    # Filter & Aggregate
     df_area = df[df['price_area'] == selected_area]
-    pie_data = df_area.groupby('group')[val_col].sum().reset_index()
-    pie_data = pie_data.sort_values(val_col, ascending=False)
+    pie_data = df_area.groupby('group')[val_col].sum().reset_index().sort_values(val_col, ascending=False)
 
-    # --- PIE CHART ---
     fig1 = go.Figure(data=[go.Pie(
         labels=pie_data['group'],
         values=pie_data[val_col],
         hole=0.0,
-        rotation=45, 
-        pull=[0.05] * len(pie_data),
-        
-        marker=dict(
-            colors=px.colors.qualitative.Pastel,
-            line=dict(width=0) # No border
-        ),
-        
+        rotation=45,
+        pull=[0]*len(pie_data),  # no explode
+        marker=dict(colors=px.colors.qualitative.Pastel, line=dict(width=0)),
         textinfo='label+percent',
         textposition='auto',
         insidetextorientation='horizontal'
     )])
 
-    # LAYOUT ADJUSTMENTS
     fig1.update_layout(
         title=dict(
             text=f"Total {data_type} in {selected_area}",
-            x=0.0,           # <--- MOVED TO LEFT
+            x=0.0,
             y=0.95,
-            xanchor='left',  # <--- ANCHOR LEFT
+            xanchor='left',
             yanchor='top'
         ),
         height=500,
-        legend=dict(
-            orientation="h", 
-            yanchor="bottom", y=-0.1, 
-            xanchor="center", x=0.5
-        ),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
         margin=dict(t=100, b=80, l=80, r=80)
     )
 
     st.plotly_chart(fig1, use_container_width=True)
 
-# --- RIGHT: LINE CHART ---
+# --- RIGHT: DAILY LINE CHART ---
 with col_right:
     st.subheader("Daily Trend")
     if not df_area.empty:
@@ -101,16 +89,17 @@ with col_right:
             df_line = df_area[df_area['group'].isin(sel_groups)].copy()
             df_line.set_index('date', inplace=True)
             df_line.sort_index(inplace=True)
-            
-            # Resample only if needed (if data is hourly)
-            # If data is already daily (from utils), this effectively does nothing but is safe
-            line_data = df_line.groupby('group')[val_col].resample('D').sum().reset_index()
-            
+
+            # Ensure continuous dates to prevent horizontal lines in SPC/LOF
+            full_idx = pd.date_range(df_line.index.min().normalize(), df_line.index.max().normalize(), freq='D')
+            df_line = df_line.groupby('group')[val_col].resample('D').sum().reindex(full_idx, fill_value=0).reset_index()
+            df_line.rename(columns={'index': 'date'}, inplace=True)
+
             fig2 = px.line(
-                line_data, 
-                x='date', 
-                y=val_col, 
-                color='group', 
+                df_line,
+                x='date',
+                y=val_col,
+                color='group',
                 title=f"Daily {data_type} over Time",
                 labels={val_col: 'MWh', 'date': 'Date'}
             )
