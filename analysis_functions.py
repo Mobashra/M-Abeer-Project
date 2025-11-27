@@ -6,15 +6,18 @@ from statsmodels.tsa.seasonal import STL
 from sklearn.neighbors import LocalOutlierFactor
 import plotly.graph_objects as go
 
+
+
 # ==========================================
-# 1. SNOW DRIFT LOGIC (Tabler 2003)
+# 5. SNOW DRIFT PHYSICS (Tabler 2003)
 # ==========================================
 
 def assign_hydro_year(df, date_col='time'):
     """
     Assigns Hydro Year (July 1st to June 30th).
+    Example: Oct 2021 belongs to Hydro Year 2021 (ending June 2022).
+             Feb 2022 belongs to Hydro Year 2021.
     """
-    # Ensure column is datetime
     if not np.issubdtype(df[date_col].dtype, np.datetime64):
          df[date_col] = pd.to_datetime(df[date_col])
          
@@ -28,14 +31,15 @@ def assign_hydro_year(df, date_col='time'):
 def calculate_snow_drift(df):
     """
     Calculates hourly snow transport components based on Tabler (2003).
+    Reference: Snow_drift.py
     """
     DENOMINATOR = 233847.0 
     
-    # Snow is defined as Precip when Temp < 1.0°C
+    # Snow definition: Precipitation when Temp < 1.0°C
     df['is_snow'] = df['temperature_2m'] < 1.0
     df['swe_mm'] = np.where(df['is_snow'], df['precipitation'], 0.0)
     
-    # Potential Transport = Wind Speed ^ 3.8
+    # Potential Transport Qupot = (u^3.8 * 3600) / 233847
     u = df['wind_speed_10m']
     df['Qupot_hourly'] = (u ** 3.8 * 3600) / DENOMINATOR
     
@@ -43,14 +47,16 @@ def calculate_snow_drift(df):
 
 def compute_seasonal_transport(df_season, T=3000, F=30000, theta=0.5):
     """
-    Aggregates hourly data into a Seasonal Total (Qt).
+    Aggregates hourly data into a Seasonal Total (Qt) using limiting logic.
+    Returns a dictionary with the totals.
     """
+    # Sum up hourly potentials
     total_swe = df_season['swe_mm'].sum()
     total_qupot = df_season['Qupot_hourly'].sum()
     
-    # Calculate Limits
-    Qspot = 0.5 * T * total_swe
-    Srwe = theta * total_swe
+    # Calculate Limits (Tabler 2003)
+    Qspot = 0.5 * T * total_swe  # Snowfall-limited
+    Srwe = theta * total_swe     # Relocated water equivalent
     
     # Determine Controlling Process
     if total_qupot > Qspot:
@@ -59,7 +65,8 @@ def compute_seasonal_transport(df_season, T=3000, F=30000, theta=0.5):
     else:
         Qinf = total_qupot
         control = "Wind Limited"
-        
+    
+    # Final Transport (Qt)
     Qt = Qinf * (1 - 0.14 ** (F / T))
     
     return {
@@ -72,23 +79,36 @@ def compute_seasonal_transport(df_season, T=3000, F=30000, theta=0.5):
 
 def compute_fence_height(Qt_kg_m, fence_type):
     """
-    Calculates required fence height (H).
+    Calculates required fence height (H) based on Table 3.3 capacities.
     """
     Qt_tonnes = Qt_kg_m / 1000.0
-    factors = {"Wyoming": 8.5, "Slat-and-wire": 7.7, "Solid": 2.9}
+    
+    # Capacity Factors from Snow_drift.py
+    factors = {
+        "Wyoming": 8.5, 
+        "Slat-and-wire": 7.7, 
+        "Solid": 2.9
+    }
     
     factor = factors.get(fence_type, 8.5)
     
     if Qt_tonnes <= 0: return 0.0
     
+    # Formula: H = (Qt / CapacityFactor)^(1/2.2)
     H = (Qt_tonnes / factor) ** (1 / 2.2)
     return H
 
 def get_wind_rose_data(df):
-    """Aggregates drift potential by wind direction."""
-    # Bin into 16 sectors
+    """
+    Aggregates Snow Transport (Qupot) by Wind Direction sectors (16 bins).
+    """
+    # Bin wind direction into 16 sectors (22.5 degrees each)
+    # Center the directions so 0 (North) is the middle of a bin
     df['sector_deg'] = (np.round(df['wind_direction_10m'] / 22.5) * 22.5) % 360
+    
+    # Sum the transport potential for each direction
     rose_data = df.groupby('sector_deg')[['Qupot_hourly']].sum().reset_index()
+    
     return rose_data
 
 # ==========================================
