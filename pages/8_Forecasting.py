@@ -3,8 +3,9 @@ import plotly.graph_objects as go
 import pandas as pd
 import utils
 import analysis_functions as af
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-st.set_page_config(page_title="SARIMAX Forecasting", layout="wide")
+st.set_page_config(page_title="Forecasting", layout="wide")
 st.title("📈 Energy Forecasting (SARIMAX)")
 
 # --- 1. GLOBAL SETTINGS ---
@@ -81,9 +82,10 @@ train_range = st.slider(
 if st.button("🚀 Train Model & Forecast"):
     
     # A. Prepare Energy Data (Target)
+    # FIX: Removed .tz_localize because timestamps are already aware
     mask = (df_energy['group'] == selected_group) & \
-           (df_energy['date'] >= pd.Timestamp(train_range[0]).tz_localize("Europe/Oslo")) & \
-           (df_energy['date'] <= pd.Timestamp(train_range[1]).tz_localize("Europe/Oslo"))
+           (df_energy['date'] >= pd.Timestamp(train_range[0])) & \
+           (df_energy['date'] <= pd.Timestamp(train_range[1]))
            
     y_train = df_energy[mask].set_index('date')['mwh'].sort_index().asfreq('h').interpolate()
     
@@ -92,10 +94,8 @@ if st.button("🚀 Train Model & Forecast"):
         st.stop()
 
     # B. Prepare Weather Data (Exogenous)
-    # We need weather for Training Period + Forecast Period
     fetch_start = train_range[0].strftime("%Y-%m-%d")
-    # We need 'horizon' hours AFTER the training end date
-    future_end_date = train_range[1] + pd.Timedelta(hours=horizon + 24) # Buffer
+    future_end_date = train_range[1] + pd.Timedelta(hours=horizon + 24) 
     fetch_end = future_end_date.strftime("%Y-%m-%d")
     
     with st.spinner("Fetching weather data..."):
@@ -110,14 +110,12 @@ if st.button("🚀 Train Model & Forecast"):
     weather_series = df_weather.set_index('time').asfreq('h').interpolate()
     
     # Split Exog into Train and Future
-    # Align with y_train index
     exog_train = weather_series.loc[y_train.index, exog_vars] if exog_vars else None
     
-    # Create Future Index for Exog
+    # Create Future Index
     future_index = pd.date_range(start=y_train.index[-1] + pd.Timedelta(hours=1), periods=horizon, freq='h')
     
-    # Get future weather (We use actual historical weather as our "forecast" of weather)
-    # Use .reindex method to handle potential missing hours safely
+    # Get future weather (Historical data acts as "forecast")
     exog_future = weather_series.reindex(future_index)[exog_vars] if exog_vars else None
     
     # C. Train & Forecast
@@ -152,7 +150,7 @@ if st.button("🚀 Train Model & Forecast"):
             line=dict(color='red', width=2)
         ))
         
-        # 3. Confidence Interval (Shaded Area)
+        # 3. Confidence Interval
         fig.add_trace(go.Scatter(
             x=conf_int.index, y=conf_int.iloc[:, 0], 
             mode='lines', line=dict(width=0), showlegend=False
