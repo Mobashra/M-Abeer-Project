@@ -33,7 +33,7 @@ df_full['Month'] = df_full['time'].dt.month
 tab1, tab2 = st.tabs(["📊 Dataset Overview (First Month)", "📈 Yearly Trend Visualization"])
 
 # ==================================================
-# TAB 1: DATASET OVERVIEW (JANUARY TREND)
+# TAB 1: DATASET OVERVIEW (CLEAN & ALIGNED)
 # ==================================================
 with tab1:
     st.subheader("Dataset Overview with First Month Trends")
@@ -65,26 +65,25 @@ with tab1:
                 "Std Dev": round(std_val, 2),
                 "Min": round(min_val, 2),
                 "Max": round(max_val, 2),
-                "First Month Trend": jan_trend # Data for the graph
+                "First Month Trend": jan_trend 
             })
         
-        # Create DataFrame
         stats_df = pd.DataFrame(summary_data)
         
-        # Display with LineChartColumn
+        # Display with clean formatting
+        # Removing 'height' parameter removes the empty whitespace rows
         st.dataframe(
             stats_df,
             column_config={
+                "Variable Name": st.column_config.TextColumn("Variable Name", width="medium"),
                 "First Month Trend": st.column_config.LineChartColumn(
                     f"Trend (Jan {stat_year})",
                     y_min=0, 
-                    y_max=None # Auto-scale
+                    y_max=None
                 ),
-                "Variable Name": st.column_config.TextColumn("Variable Name", width="medium"),
             },
             hide_index=True, 
-            use_container_width=True,
-            height=400 # Give it some height to look like the image
+            use_container_width=True
         )
     else:
         st.warning("No data.")
@@ -95,13 +94,11 @@ with tab1:
 with tab2:
     st.subheader("Yearly Trend Visualization")
     
-    # --- CONTROLS ---
     c1, c2, c3 = st.columns([3, 1, 1])
     with c1:
         df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
         unique_months = sorted(df_full['YYYY-MM'].unique())
         
-        # Default: Full Year (First Month to Last Month of Data) to show "Yearly Trend"
         start_month, end_month = st.select_slider(
             "Select Time Range",
             options=unique_months,
@@ -113,18 +110,11 @@ with tab2:
         normalize = st.checkbox("Normalize (0-1)", value=False)
         select_all = st.checkbox("Select All Variables", value=False)
 
-    # Variable Selection
     if select_all:
         default_selection = utils.WEATHER_VARS
     else:
-        default_selection = ["temperature_2m", "precipitation"]
+        default_selection = ["temperature_2m"]
             
-    with c3:
-        # Place selector in the 3rd column or below? 
-        # Keeping it in a column makes it compact, but let's move it to a full row if needed.
-        # For now, c3 is fine.
-        pass
-
     # Full Width Selector
     selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=default_selection, key=f"vars_{select_all}")
 
