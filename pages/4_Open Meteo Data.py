@@ -1,11 +1,11 @@
 import streamlit as st
-import pandas as pd
-import numpy as np 
 import plotly.graph_objects as go
-import utils # <--- Using your existing utils
+import pandas as pd
+import numpy as np
+import utils 
 
-st.set_page_config(page_title="Weather Data Visualization", layout="wide")
-st.title("Weather Data Visualisation (2021–2024)")
+st.set_page_config(page_title="Weather Statistics", layout="wide")
+st.title("🌤️ Weather Data Analysis")
 
 # --- 1. GLOBAL SETTINGS ---
 if "selected_price_area" not in st.session_state:
@@ -16,150 +16,145 @@ if "selected_price_area" not in st.session_state:
 current_area = st.session_state["selected_price_area"]
 coords = st.session_state["selected_coords"]
 
-# --- DISPLAY CONTEXT BOX ---
-st.info(f"""
-**Analysis Scope:**
-* **Weather Location (Price Area):** {current_area} ({coords['lat']:.2f}, {coords['lon']:.2f})
-""")
+st.info(f"**Analysis Scope:** {current_area} ({coords['lat']:.2f}, {coords['lon']:.2f})")
 
 # --- 2. FETCH DATA ---
-# We load the full history once so the slider is fast
-with st.spinner("Fetching weather history..."):
-    df_raw = utils.fetch_weather_api(coords['lat'], coords['lon'], "2021-01-01", "2024-12-31")
+with st.spinner("Fetching weather history (2021-2024)..."):
+    df_full = utils.fetch_weather_api(coords['lat'], coords['lon'], "2021-01-01", "2024-12-31")
 
-if df_raw.empty:
+if df_full.empty:
     st.error("No weather data available.")
     st.stop()
 
-# --- 3. WIDGETS ---
-WIND_DIRECTION_COL = "wind_direction_10m"
-WIND_ARROW_COLOR = '#128264'
-LINE_COLORS = ['#035397', '#128264', '#f9c80e', '#546e7a', '#9dc183']
+df_full['Year'] = df_full['time'].dt.year
 
-# Column Selector
-columns = [c for c in df_raw.columns if c not in ['time', WIND_DIRECTION_COL]]
-selected_col = st.selectbox("Select a column", ["All columns"] + columns)
+# --- 3. TABS ---
+tab1, tab2 = st.tabs(["📊 Statistics & Trends", "📈 Advanced Visualization"])
 
-# Month Slider
-df_raw['year_month'] = df_raw['time'].dt.to_period('M').astype(str)
-available_months = sorted(df_raw['year_month'].unique())
-
-if not available_months:
-    st.error("No date data found.")
-    st.stop()
-
-start_month, end_month = st.select_slider(
-    "Select Month Range (Year-Month)",
-    options=available_months,
-    value=(available_months[-12], available_months[-1]) # Default last year
-)
-
-normalize_flag = st.checkbox("Normalize numeric columns (0-1 scale)", value=True)
-
-# --- 4. DATA PROCESSING ---
-# Filter by Date
-start_date = pd.to_datetime(start_month)
-end_date = (pd.to_datetime(end_month) + pd.offsets.MonthEnd(0)) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-
-mask = (df_raw['time'] >= start_date) & (df_raw['time'] <= end_date)
-df_plot = df_raw.loc[mask].copy()
-
-# Normalize
-if normalize_flag:
-    cols_to_norm = [c for c in df_plot.select_dtypes(include="number").columns if c != WIND_DIRECTION_COL]
-    for col in cols_to_norm:
-        min_val = df_plot[col].min()
-        max_val = df_plot[col].max()
-        if max_val != min_val:
-            df_plot[col] = (df_plot[col] - min_val) / (max_val - min_val)
-        else:
-            df_plot[col] = 0.5 
-
-# --- 5. PLOTTING LOGIC ---
-fig = go.Figure()
-
-# A. Plot Lines
-if selected_col == "All columns":
-    plot_cols = [c for c in columns if c in df_plot.columns]
-    for i, col in enumerate(plot_cols):
-        fig.add_trace(go.Scatter(
-            x=df_plot["time"], y=df_plot[col], mode="lines",
-            line=dict(color=LINE_COLORS[i % len(LINE_COLORS)], width=2), name=col
-        ))
-else:
-    fig.add_trace(go.Scatter(
-        x=df_plot["time"], y=df_plot[selected_col], mode="lines",
-        line=dict(color=LINE_COLORS[0], width=2), name=selected_col
-    ))
-
-# B. Arrow Logic (The Advanced Part)
-# Only show arrows if "All columns" or "Wind Direction" is relevant
-if WIND_DIRECTION_COL in df_plot.columns:
-    # 1. Determine Y-position for arrows (Below the chart)
-    # If normalized, data is 0-1. We put arrows at -0.1
-    # If raw, we find the min value and go 10% lower
-    if normalize_flag:
-        arrow_y = -0.1
-        arrow_len = 0.1
-    else:
-        # Find global min/max to scale arrows properly
-        current_vals = df_plot[selected_col] if selected_col != "All columns" else df_plot[columns]
-        g_min = current_vals.min().min() if isinstance(current_vals, pd.DataFrame) else current_vals.min()
-        g_max = current_vals.max().max() if isinstance(current_vals, pd.DataFrame) else current_vals.max()
-        arrow_y = g_min - (g_max - g_min) * 0.1
-        arrow_len = (g_max - g_min) * 0.1
-
-    # 2. Downsample (Show 1 arrow every ~30-50 points)
-    arrow_step = max(1, len(df_plot) // 40)
+# ==================================================
+# TAB 1: STATISTICS (Your Original Logic)
+# ==================================================
+with tab1:
+    st.subheader("Yearly Statistics")
+    stat_year = st.selectbox("Select Year:", [2021, 2022, 2023, 2024], index=0)
     
-    # 3. Calculate Time Offset for X-axis vector component
-    time_span = df_plot['time'].iloc[-1] - df_plot['time'].iloc[0]
-    time_offset_mag = time_span * 0.015 
-
-    for i in range(0, len(df_plot), arrow_step):
-        row = df_plot.iloc[i]
-        t = row["time"]
-        wind_dir = row[WIND_DIRECTION_COL]
-
-        # Math: Convert degrees to radians. 
-        # 0 deg = North (Up). In Plotly X/Y:
-        # X is Time, Y is Value.
-        # We rotate 180 because wind "comes from" the direction.
-        theta = np.deg2rad(wind_dir + 180) 
-
-        # Calculate Arrow Head position
-        y_change = np.cos(theta) * arrow_len
-        arrow_y2 = arrow_y + y_change * 0.8
-
-        x_change = np.sin(theta)
-        arrow_x2 = t + (time_offset_mag * x_change)
+    df_stats = df_full[df_full['Year'] == stat_year].copy()
+    
+    if not df_stats.empty:
+        summary_data = []
+        for var in utils.WEATHER_VARS:
+            summary_data.append({
+                "Variable": var,
+                "Average": round(df_stats[var].mean(), 2),
+                "Std Dev": round(df_stats[var].std(), 2),
+                "Min": round(df_stats[var].min(), 2),
+                "Max": round(df_stats[var].max(), 2),
+                "Trend": df_stats[var].tolist()
+            })
         
-        # Add Annotation (The Arrow)
-        fig.add_annotation(
-            x=t, y=arrow_y,       # Tail
-            ax=arrow_x2, ay=arrow_y2, # Head
-            xref="x", yref="y", axref="x", ayref="y",
-            text="", showarrow=True, 
-            arrowhead=3, arrowsize=1, arrowwidth=1.5,
-            arrowcolor=WIND_ARROW_COLOR
+        st.dataframe(
+            pd.DataFrame(summary_data),
+            column_config={"Trend": st.column_config.LineChartColumn(f"Trend ({stat_year})")},
+            hide_index=True, use_container_width=True
         )
+    else:
+        st.warning("No data.")
 
-    # Legend Item
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None], mode="markers",
-        marker=dict(symbol="triangle-up", color=WIND_ARROW_COLOR, size=10),
-        name="Wind Direction", showlegend=True
-    ))
+# ==================================================
+# TAB 2: PLOT (With Improved Arrow Logic)
+# ==================================================
+with tab2:
+    st.subheader("Interactive Weather Plot")
+    
+    # --- CONTROLS ---
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
+        months = sorted(df_full['YYYY-MM'].unique())
+        
+        # Default: First 2 months
+        start_m, end_m = st.select_slider("Time Range", options=months, value=(months[0], months[1]))
+        
+    with c2:
+        normalize = st.checkbox("Normalize (0-1)", value=True)
 
-# --- 6. FINAL LAYOUT ---
-header_text = f"{selected_col} ({start_month} to {end_month})"
-fig.update_layout(
-    title=dict(text=header_text, x=0.5, xanchor="center", font=dict(size=20)),
-    xaxis_title="Time",
-    template="plotly_white",
-    height=600,
-    legend=dict(orientation="h", y=-0.2),
-    margin=dict(b=80, t=80) # Extra bottom margin for arrows
-)
+    selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=["temperature_2m", "precipitation", "wind_speed_10m"])
 
-st.plotly_chart(fig, use_container_width=True)
+    # --- FILTER ---
+    start_date = pd.to_datetime(start_m)
+    end_date = (pd.to_datetime(end_m) + pd.offsets.MonthEnd(0)) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    mask = (df_full['time'] >= start_date) & (df_full['time'] <= end_date)
+    df_plot = df_full.loc[mask].copy()
+
+    # --- NORMALIZE ---
+    if normalize:
+        for col in selected_cols:
+            min_v, max_v = df_plot[col].min(), df_plot[col].max()
+            if max_v != min_v:
+                df_plot[col] = (df_plot[col] - min_v) / (max_v - min_v)
+
+    # --- PLOTTING ---
+    fig = go.Figure()
+    
+    # 1. Lines
+    for col in selected_cols:
+        if col == "wind_direction_10m": continue
+        fig.add_trace(go.Scatter(x=df_plot['time'], y=df_plot[col], mode='lines', name=col))
+
+    # 2. ARROWS (The Advanced Logic)
+    # Only draw if Wind Direction is available
+    if "wind_direction_10m" in df_plot.columns and ("wind_direction_10m" in selected_cols or "wind_speed_10m" in selected_cols):
+        
+        # Constants for arrow drawing
+        ARROW_COLOR = "teal"
+        ARROW_Y_POS = -0.1 if normalize else df_plot[selected_cols[0]].min() * 0.95
+        ARROW_LEN = 0.1  # Length of arrow shaft
+        
+        # Downsample (1 arrow every ~30 points)
+        step = max(1, len(df_plot) // 30)
+        
+        # Calculate Time Span for X-axis vector math
+        time_span = df_plot['time'].iloc[-1] - df_plot['time'].iloc[0]
+        time_offset_mag = time_span * 0.015 # Scale X-vector relative to total time
+
+        for i in range(0, len(df_plot), step):
+            row = df_plot.iloc[i]
+            t = row["time"]
+            wind_dir = row["wind_direction_10m"]
+
+            # Vector Math: Convert degrees to radians (Rotate 180 to point 'with' wind)
+            theta = np.deg2rad(wind_dir + 180)
+            
+            # Calculate Tail Position (ax, ay) relative to Head (x, y)
+            # Y-axis (Value): Cosine
+            y_change = np.cos(theta) * ARROW_LEN
+            tail_y = ARROW_Y_POS + y_change
+            
+            # X-axis (Time): Sine
+            x_change = np.sin(theta)
+            tail_x = t + (time_offset_mag * x_change)
+
+            # Draw Vector Arrow
+            fig.add_annotation(
+                x=t, y=ARROW_Y_POS,        # Arrow Head
+                ax=tail_x, ay=tail_y,      # Arrow Tail
+                xref="x", yref="y", axref="x", ayref="y",
+                showarrow=True, arrowhead=3, arrowsize=1, arrowwidth=1.5,
+                arrowcolor=ARROW_COLOR
+            )
+            
+        # Legend Dummy (so user knows what Teal arrows are)
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode='markers',
+            marker=dict(symbol='triangle-up', color='teal', size=10),
+            name='Wind Direction', showlegend=True
+        ))
+
+    fig.update_layout(
+        height=600, template="plotly_white",
+        title=f"Weather Trends ({start_m} to {end_m})",
+        margin=dict(b=80, t=50),
+        yaxis=dict(title="Normalized" if normalize else "Value")
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
