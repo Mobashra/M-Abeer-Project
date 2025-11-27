@@ -32,7 +32,7 @@ df_full['Year'] = df_full['time'].dt.year
 tab1, tab2 = st.tabs(["📊 Statistics & Trends", "📈 Advanced Visualization"])
 
 # ==================================================
-# TAB 1: STATISTICS (Your Original Logic)
+# TAB 1: STATISTICS
 # ==================================================
 with tab1:
     st.subheader("Yearly Statistics")
@@ -61,13 +61,13 @@ with tab1:
         st.warning("No data.")
 
 # ==================================================
-# TAB 2: PLOT (With Improved Arrow Logic)
+# TAB 2: PLOT (FIXED ARROWS)
 # ==================================================
 with tab2:
     st.subheader("Interactive Weather Plot")
     
     # --- CONTROLS ---
-    c1, c2 = st.columns([3, 1])
+    c1, c2, c3 = st.columns([3, 1, 1])
     with c1:
         df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
         months = sorted(df_full['YYYY-MM'].unique())
@@ -77,8 +77,14 @@ with tab2:
         
     with c2:
         normalize = st.checkbox("Normalize (0-1)", value=True)
+        select_all = st.checkbox("Select All Variables")
 
-    selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=["temperature_2m", "precipitation", "wind_speed_10m"])
+    # Variable Selection Logic
+    default_cols = ["temperature_2m", "precipitation"]
+    if select_all:
+        default_cols = utils.WEATHER_VARS
+        
+    selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=default_cols)
 
     # --- FILTER ---
     start_date = pd.to_datetime(start_m)
@@ -98,31 +104,35 @@ with tab2:
     
     # 1. Lines
     for col in selected_cols:
-        if col == "wind_direction_10m": continue
+        if col == "wind_direction_10m": continue # Don't plot direction as a line
         fig.add_trace(go.Scatter(x=df_plot['time'], y=df_plot[col], mode='lines', name=col))
 
-    # 2. ARROWS (The Advanced Logic)
-    # Only draw if Wind Direction is available
+    # 2. ARROWS (Vector Logic - Fixes Straight Arrow Issue)
+    # Only show arrows if Wind Direction is relevant
     if "wind_direction_10m" in df_plot.columns and ("wind_direction_10m" in selected_cols or "wind_speed_10m" in selected_cols):
         
-        # Constants for arrow drawing
+        # Constants
         ARROW_COLOR = "teal"
+        # Place arrows below the 0 line so they don't overlap
         ARROW_Y_POS = -0.1 if normalize else df_plot[selected_cols[0]].min() * 0.95
-        ARROW_LEN = 0.1  # Length of arrow shaft
+        ARROW_LEN = 0.08  # Length of arrow shaft
         
-        # Downsample (1 arrow every ~30 points)
+        # Downsample (1 arrow every ~30 points to avoid clutter)
         step = max(1, len(df_plot) // 30)
         
         # Calculate Time Span for X-axis vector math
         time_span = df_plot['time'].iloc[-1] - df_plot['time'].iloc[0]
-        time_offset_mag = time_span * 0.015 # Scale X-vector relative to total time
+        time_offset_mag = time_span * 0.015 # Scale X-vector relative to total time shown
 
         for i in range(0, len(df_plot), step):
             row = df_plot.iloc[i]
             t = row["time"]
             wind_dir = row["wind_direction_10m"]
 
-            # Vector Math: Convert degrees to radians (Rotate 180 to point 'with' wind)
+            # Math: Convert degrees to radians. 
+            # 0 deg = North (Up). In Plotly X/Y:
+            # X is Time, Y is Value.
+            # We rotate 180 because wind "comes from" the direction.
             theta = np.deg2rad(wind_dir + 180)
             
             # Calculate Tail Position (ax, ay) relative to Head (x, y)
@@ -134,12 +144,15 @@ with tab2:
             x_change = np.sin(theta)
             tail_x = t + (time_offset_mag * x_change)
 
-            # Draw Vector Arrow
+            # Draw Vector Arrow (Annotation)
             fig.add_annotation(
                 x=t, y=ARROW_Y_POS,        # Arrow Head
                 ax=tail_x, ay=tail_y,      # Arrow Tail
                 xref="x", yref="y", axref="x", ayref="y",
-                showarrow=True, arrowhead=3, arrowsize=1, arrowwidth=1.5,
+                showarrow=True, 
+                arrowhead=3,      # Style of arrow head
+                arrowsize=1, 
+                arrowwidth=1.5,
                 arrowcolor=ARROW_COLOR
             )
             
@@ -153,7 +166,7 @@ with tab2:
     fig.update_layout(
         height=600, template="plotly_white",
         title=f"Weather Trends ({start_m} to {end_m})",
-        margin=dict(b=80, t=50),
+        margin=dict(b=80, t=50), # Extra bottom margin for arrows
         yaxis=dict(title="Normalized" if normalize else "Value")
     )
 
