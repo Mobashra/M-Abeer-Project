@@ -193,3 +193,47 @@ def compute_spectrogram(series, window_length=168, overlap=84):
     Sxx_dB = 10 * np.log10(Sxx + 1e-9)
     t_axis = series.index[0] + pd.to_timedelta(t, unit="h")
     return f, t_axis, Sxx_dB
+
+
+
+# ... (Keep all previous code) ...
+
+# ==========================================
+# 5. FORECASTING (SARIMAX)
+# ==========================================
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+def train_sarimax(endog, exog=None, order=(1,1,1), seasonal_order=(0,0,0,0), forecast_steps=24, exog_forecast=None):
+    """
+    Trains a SARIMAX model and generates a forecast.
+    
+    Args:
+        endog (pd.Series): The energy data (Target).
+        exog (pd.DataFrame): The weather data (Features) for the training period.
+        order (tuple): ARIMA (p,d,q) parameters.
+        seasonal_order (tuple): Seasonal (P,D,Q,s) parameters.
+        forecast_steps (int): How many hours to forecast.
+        exog_forecast (pd.DataFrame): Weather data for the future (required if exog is used).
+        
+    Returns:
+        model_fit: The trained model object.
+        forecast: The forecast result object (containing predicted mean and conf_int).
+    """
+    # Fit the model
+    # disp=False suppresses console output
+    model = SARIMAX(endog, exog=exog, order=order, seasonal_order=seasonal_order, 
+                    enforce_stationarity=False, enforce_invertibility=False)
+    model_fit = model.fit(disp=False)
+    
+    # Generate Forecast
+    # If we have exog variables, we must provide them for the forecast period
+    if exog is not None:
+        if exog_forecast is None or len(exog_forecast) < forecast_steps:
+            raise ValueError("Exogenous data for forecast period is missing or too short.")
+        # Ensure exog_forecast matches the steps
+        exog_future = exog_forecast.iloc[:forecast_steps]
+        forecast = model_fit.get_forecast(steps=forecast_steps, exog=exog_future)
+    else:
+        forecast = model_fit.get_forecast(steps=forecast_steps)
+        
+    return model_fit, forecast
