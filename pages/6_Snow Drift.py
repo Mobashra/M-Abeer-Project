@@ -9,9 +9,9 @@ import numpy as np
 st.set_page_config(page_title="Snow Drift Analysis", layout="wide")
 st.title("❄️ Snow Drift Analysis (Tabler 2003)")
 
-# --- 1. CHECK DATA REQUIREMENTS ---
+# --- 1. LOCATION & DATA CHECK ---
 if "selected_coords" not in st.session_state:
-    st.warning("⚠️ No location selected! Please go to the **Map Overview** page and click a location first.")
+    st.warning("⚠️ Please go to the **Home Page** and select a region on the map first.")
     st.stop()
 
 coords = st.session_state["selected_coords"]
@@ -19,15 +19,15 @@ area = st.session_state.get("selected_price_area", "Unknown Location")
 
 st.info(f"**Analysis Location:** {area} ({coords['lat']:.4f}, {coords['lon']:.4f})")
 
-# --- 2. CONFIGURATION (Like your screenshot) ---
+# --- 2. CONFIGURATION ---
 with st.expander("⚙️ Configuration & Parameters", expanded=True):
     with st.form("snow_params"):
         st.markdown("#### Model Parameters")
         c1, c2, c3 = st.columns(3)
         with c1:
-            T = st.number_input("Max Transport Dist (T) [m]", value=3000, step=100, help="Distance snow can be transported")
+            T = st.number_input("Max Transport Dist (T) [m]", value=3000, step=100)
         with c2:
-            F = st.number_input("Fetch Distance (F) [m]", value=30000, step=1000, help="Upwind distance available for snow pick-up")
+            F = st.number_input("Fetch Distance (F) [m]", value=30000, step=1000)
         with c3:
             theta = st.number_input("Relocation Coeff (theta)", value=0.5, step=0.1)
             
@@ -38,10 +38,9 @@ with st.expander("⚙️ Configuration & Parameters", expanded=True):
         with c5:
             end_year = st.number_input("End Year", min_value=start_year, max_value=2024, value=2023)
             
-        submit = st.form_submit_button("Update Analysis")
+        submit = st.form_submit_button("Run Analysis")
 
-# Default fetch if form not clicked yet, or update on click
-# Hydro Year 2021 = July 1, 2021 -> June 30, 2022
+# Default range if not submitted yet
 fetch_start = f"{start_year}-07-01"
 fetch_end = f"{end_year + 1}-06-30"
 
@@ -58,18 +57,19 @@ if df.empty:
 df = af.assign_hydro_year(df)
 df = af.calculate_snow_drift(df)
 
-# Aggregate per Hydro Year
-years = range(start_year, end_year + 1)
-results = []
+# Storage for results
+annual_results = []
+monthly_results = []
 sector_list = []
-monthly_data = []
+
+years = range(start_year, end_year + 1)
 
 for y in years:
-    # Filter for specific Hydro Year
+    # Filter for specific Hydro Year (July 1 - June 30)
     sub = df[df['hydro_year'] == y].copy()
     if sub.empty: continue
     
-    # A. Annual Totals (Tabler Logic)
+    # A. Annual Totals
     res = af.compute_seasonal_transport(sub, T, F, theta)
     res['Season'] = f"{y}-{y+1}" # Format: "2021-2022"
     
@@ -78,30 +78,44 @@ for y in years:
     res['Slat-Wire (m)'] = af.compute_fence_height(res['Qt_kg_m'], "Slat-and-wire")
     res['Solid (m)'] = af.compute_fence_height(res['Qt_kg_m'], "Solid")
     
-    results.append(res)
+    annual_results.append(res)
     
-    # C. Wind Rose Data (Only when snow is drifting)
+    # C. Wind Rose (Drift Events Only)
     drift_events = sub[sub['Qupot_hourly'] > 0]
     if not drift_events.empty:
         sector_list.append(af.get_wind_rose_data(drift_events))
         
-    # D. Monthly Breakdown (Bonus)
-    sub['Month'] = sub['time'].dt.strftime('%Y-%m')
-    mon_agg = sub.groupby('Month')['Qupot_hourly'].sum().reset_index()
-    mon_agg['Season'] = f"{y}-{y+1}"
-    monthly_data.append(mon_agg)
+    # D. Monthly Breakdown (Strictly Monthly)
+    # We loop through months 7,8,9...12,1,2...6 to maintain Hydro Order
+    # Note: sub['time'].dt.month gives 1-12
+    sub['MonthNum'] = sub['time'].dt.month
+    
+    # We group by MonthNum to get totals for this specific year's months
+    for m in range(1, 13):
+        m_sub = sub[sub['MonthNum'] == m]
+        if m_sub.empty: continue
+        
+        # Calculate Transport (Qt) just for this month
+        m_res = af.compute_seasonal_transport(m_sub, T, F, theta)
+        
+        monthly_results.append({
+            "Season": f"{y}-{y+1}",
+            "MonthNum": m,
+            # Convert Month Number to Name (Jan, Feb...)
+            "Month": pd.to_datetime(f"2000-{m}-01").strftime('%b'),
+            "Qt (tonnes/m)": m_res['Qt_tonnes_m']
+        })
 
 # --- 5. VISUALIZATION ---
-if not results:
-    st.warning("No snow drift detected in this period (Temp likely > 1°C).")
+if not annual_results:
+    st.warning("No snow drift detected in this period.")
     st.stop()
 
-df_res = pd.DataFrame(results)
+df_res = pd.DataFrame(annual_results)
 
-# TABS
-tab1, tab2 = st.tabs(["📊 Annual Overview", "📈 Monthly Breakdown"])
+tab1, tab2 = st.tabs(["📊 Annual Overview", "📈 Monthly Comparison"])
 
-# --- TAB 1: ANNUAL + ROSE ---
+# --- TAB 1: ANNUAL ---
 with tab1:
     c_left, c_right = st.columns([3, 2])
     
@@ -116,7 +130,6 @@ with tab1:
         )
         st.plotly_chart(fig_annual, use_container_width=True)
         
-        # Fence Table
         st.markdown("#### Required Fence Heights")
         cols_show = ['Season', 'Qt_tonnes_m', 'Wyoming (m)', 'Slat-Wire (m)', 'Solid (m)']
         st.dataframe(
@@ -126,13 +139,12 @@ with tab1:
         )
 
     with c_right:
-        st.subheader("Directional Transport")
+        st.subheader("Drift Direction")
         if sector_list:
-            # Combine all years and average
+            # Average the wind rose sectors across all years
             all_sectors = pd.concat(sector_list)
             avg_rose = all_sectors.groupby('sector_deg')['Qupot_hourly'].mean().reset_index()
             
-            # Polar Bar Chart (Wind Rose)
             fig_rose = go.Figure(go.Barpolar(
                 r=avg_rose['Qupot_hourly'],
                 theta=avg_rose['sector_deg'],
@@ -145,23 +157,48 @@ with tab1:
             fig_rose.update_layout(
                 template='plotly_white',
                 title="Avg Drift Potential (kg/m)",
-                polar=dict(
-                    angularaxis=dict(direction="clockwise", rotation=90),
-                    radialaxis=dict(showticklabels=True)
-                )
+                polar=dict(angularaxis=dict(direction="clockwise", rotation=90))
             )
             st.plotly_chart(fig_rose, use_container_width=True)
         else:
-            st.info("No drift events to plot.")
+            st.info("No drift events.")
 
-# --- TAB 2: MONTHLY (BONUS) ---
+# --- TAB 2: MONTHLY COMPARISON (The "Best" Chart) ---
 with tab2:
-    st.subheader("Monthly Snow Accumulation")
-    if monthly_data:
-        df_mon = pd.concat(monthly_data)
-        fig_mon = px.area(
-            df_mon, x='Month', y='Qupot_hourly', color='Season',
-            title="Monthly Potential Transport (Q_pot)",
-            labels={'Qupot_hourly': 'Transport (kg/m)'}
+    st.subheader("Seasonal Progression Comparison")
+    
+    if monthly_results:
+        df_mon = pd.DataFrame(monthly_results)
+        
+        # 1. Create Custom Sort Order (July -> June)
+        month_order = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+        
+        # Make 'Month' a categorical type so Plotly sorts it correctly (not alphabetical)
+        df_mon['Month'] = pd.Categorical(df_mon['Month'], categories=month_order, ordered=True)
+        df_mon = df_mon.sort_values(['Season', 'Month'])
+        
+        # 2. Plot Multi-Line Chart
+        fig_mon = px.line(
+            df_mon, 
+            x='Month', 
+            y='Qt (tonnes/m)', 
+            color='Season',  # This creates the separate lines per year
+            markers=True,
+            symbol='Season', # Different marker shapes for clarity
+            title="Monthly Snow Transport Comparison (Hydro Year Aligned)",
+            labels={'Qt (tonnes/m)': 'Transport (Tonnes/m)'}
         )
+        
+        # 3. Visual Polish
+        fig_mon.update_layout(
+            xaxis_title=None,
+            hovermode="x unified", # Hovering Jan shows values for 2021, 2022, 2023 together
+            template="plotly_white",
+            legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center")
+        )
+        
         st.plotly_chart(fig_mon, use_container_width=True)
+        
+        st.info("💡 **Insight:** Comparing the lines vertically shows which winter had the most severe drift for a specific month.")
+    else:
+        st.info("No monthly data available.")
