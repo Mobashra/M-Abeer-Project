@@ -42,7 +42,6 @@ with tab1:
     if not df_stats.empty:
         summary_data = []
         for var in utils.WEATHER_VARS:
-            # Skip direction for stats if you want, or keep it
             summary_data.append({
                 "Variable": var,
                 "Average": round(df_stats[var].mean(), 2),
@@ -61,13 +60,14 @@ with tab1:
         st.warning("No data.")
 
 # ==================================================
-# TAB 2: PLOT (CLEAN LINES ONLY)
+# TAB 2: PLOT (NEW LAYOUT)
 # ==================================================
 with tab2:
     st.subheader("Interactive Weather Plot")
     
-    # --- CONTROLS ---
-    c1, c2, c3 = st.columns([3, 1, 1])
+    # --- ROW 1: TIME SLIDER & CHECKBOXES ---
+    c1, c2 = st.columns([3, 1])
+    
     with c1:
         df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
         unique_months = sorted(df_full['YYYY-MM'].unique())
@@ -80,22 +80,24 @@ with tab2:
         )
         
     with c2:
+        st.write("") # Spacer to align with slider
         normalize = st.checkbox("Normalize (0-1)", value=False)
         select_all = st.checkbox("Select All Variables", value=False)
 
-    with c3:
-        # Default logic
-        if select_all:
-            default_selection = utils.WEATHER_VARS
-        else:
-            default_selection = ["temperature_2m", "precipitation"]
-            
-        selected_cols = st.multiselect(
-            "Variables:", 
-            utils.WEATHER_VARS, 
-            default=default_selection,
-            key=f"vars_{select_all}" # Forces reset when 'select_all' changes
-        )
+    # --- ROW 2: VARIABLES (FULL WIDTH) ---
+    # Logic: Default to everything if checked, else just temp/precip
+    if select_all:
+        default_selection = utils.WEATHER_VARS
+    else:
+        default_selection = ["temperature_2m", "precipitation"]
+        
+    # Using a dynamic key ensures it resets when you click "Select All"
+    selected_cols = st.multiselect(
+        "Select Variables to Plot:", 
+        utils.WEATHER_VARS, 
+        default=default_selection,
+        key=f"multiselect_{select_all}"
+    )
 
     # --- FILTER DATA ---
     start_date = pd.to_datetime(start_month)
@@ -134,10 +136,12 @@ with tab2:
     fig.update_layout(
         height=500,
         template="plotly_white",
+        title=f"Weather Trends ({start_month} to {end_month})",
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
-        yaxis=dict(title="Normalized Value" if normalize else "Value"),
         margin=dict(l=40, r=40, t=80, b=40),
-        title=f"Weather Trends ({start_month} to {end_month})"
+        # AXIS LABELS (Added as requested)
+        xaxis=dict(title="Time", showgrid=False),
+        yaxis=dict(title="Normalized Value (0-1)" if normalize else "Value", showgrid=True)
     )
 
     st.plotly_chart(fig, use_container_width=True)
