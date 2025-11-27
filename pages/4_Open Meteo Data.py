@@ -1,7 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
-import numpy as np
 import utils 
 
 st.set_page_config(page_title="Weather Statistics", layout="wide")
@@ -29,7 +28,7 @@ if df_full.empty:
 df_full['Year'] = df_full['time'].dt.year
 
 # --- 3. TABS ---
-tab1, tab2 = st.tabs(["📊 Statistics Table", "📈 Advanced Visualization"])
+tab1, tab2 = st.tabs(["📊 Statistics Table", "📈 Interactive Plot"])
 
 # ==================================================
 # TAB 1: STATISTICS
@@ -43,6 +42,7 @@ with tab1:
     if not df_stats.empty:
         summary_data = []
         for var in utils.WEATHER_VARS:
+            # Skip direction for stats if you want, or keep it
             summary_data.append({
                 "Variable": var,
                 "Average": round(df_stats[var].mean(), 2),
@@ -61,7 +61,7 @@ with tab1:
         st.warning("No data.")
 
 # ==================================================
-# TAB 2: VISUALIZATION
+# TAB 2: PLOT (CLEAN LINES ONLY)
 # ==================================================
 with tab2:
     st.subheader("Interactive Weather Plot")
@@ -78,30 +78,23 @@ with tab2:
             options=unique_months,
             value=(unique_months[0], unique_months[1]) 
         )
-
+        
     with c2:
-        # Checkboxes
         normalize = st.checkbox("Normalize (0-1)", value=False)
         select_all = st.checkbox("Select All Variables", value=False)
 
     with c3:
-        # Logic: If "Select All" is checked, default to everything (except direction)
-        # If unchecked, default to just Temp/Precip
-        
-        # Exclude wind_direction from line plots (it looks messy as a line)
-        plot_vars = [v for v in utils.WEATHER_VARS if v != "wind_direction_10m"]
-        
+        # Default logic
         if select_all:
-            default_selection = plot_vars
+            default_selection = utils.WEATHER_VARS
         else:
             default_selection = ["temperature_2m", "precipitation"]
             
-        # Note: Changing 'key' forces the widget to update when 'select_all' changes
         selected_cols = st.multiselect(
             "Variables:", 
             utils.WEATHER_VARS, 
             default=default_selection,
-            key=f"vars_{select_all}" 
+            key=f"vars_{select_all}" # Forces reset when 'select_all' changes
         )
 
     # --- FILTER DATA ---
@@ -129,10 +122,7 @@ with tab2:
         "wind_direction_10m": "purple"
     }
 
-    # 1. Lines
     for col in selected_cols:
-        if col == "wind_direction_10m": continue 
-        
         fig.add_trace(go.Scatter(
             x=df_plot['time'], 
             y=df_plot[col], 
@@ -141,55 +131,12 @@ with tab2:
             line=dict(width=1.5, color=colors.get(col, "black"))
         ))
 
-    # 2. Arrows (ALWAYS ON if data exists)
-    if "wind_direction_10m" in df_full.columns:
-        # Downsample
-        step = max(1, len(df_plot) // 30)
-        arrow_data = df_plot.iloc[::step].copy()
-        
-        # Position arrows below chart
-        if normalize:
-            y_pos = -0.15
-        else:
-            # Find global min of currently plotted lines to place arrows underneath
-            if selected_cols:
-                vals = df_plot[selected_cols].select_dtypes(include=np.number).values
-                # Handle case where all values might be NaN or empty
-                if vals.size > 0:
-                    min_val = np.nanmin(vals)
-                    range_val = np.nanmax(vals) - min_val
-                    y_pos = min_val - (range_val * 0.1) if range_val > 0 else min_val - 1
-                else:
-                    y_pos = 0
-            else:
-                y_pos = 0
-        
-        # Rotate 180 to point with wind
-        arrow_angles = (arrow_data['wind_direction_10m'] + 180) % 360
-
-        fig.add_trace(go.Scatter(
-            x=arrow_data['time'],
-            y=[y_pos] * len(arrow_data), 
-            mode='markers',
-            marker=dict(
-                symbol="arrow-up", 
-                size=14, 
-                angle=arrow_angles, 
-                color="teal", 
-                line=dict(width=1, color="darkslategray")
-            ),
-            name="Wind Direction",
-            hoverinfo="text",
-            hovertext=arrow_data['time'].dt.strftime('%Y-%m-%d %H:00') + "<br>Dir: " + arrow_data['wind_direction_10m'].astype(str) + "°"
-        ))
-
     fig.update_layout(
-        height=600,
+        height=500,
         template="plotly_white",
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
-        yaxis=dict(title="Normalized Value" if normalize else "Value", showgrid=True),
-        xaxis=dict(showgrid=False),
-        margin=dict(l=40, r=40, t=80, b=80),
+        yaxis=dict(title="Normalized Value" if normalize else "Value"),
+        margin=dict(l=40, r=40, t=80, b=40),
         title=f"Weather Trends ({start_month} to {end_month})"
     )
 
