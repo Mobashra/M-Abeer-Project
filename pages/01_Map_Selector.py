@@ -70,24 +70,17 @@ with st.spinner("Loading Map Data..."):
 if not geojson_areas: st.error("Error: 'elspot_areas.geojson' not found."); st.stop()
 
 # --- FIX 1: PRE-PROCESS PRICE AREAS (Sanitize Names) ---
-# This ensures we always have a valid 'name' property to link with
 if geojson_areas:
     for f in geojson_areas['features']:
         p = f['properties']
-        # Try to find the name in common keys
         raw_name = p.get('ElSpotOmr') or p.get('navn') or p.get('name') or p.get('omrnavn') or "Unknown"
-        
-        # Standardize formatting: Ensure "NO 1" format (Space between NO and Number)
-        # This matches your DataFrame's format below.
+        # Standardize formatting: "NO 1"
         clean_name = str(raw_name).replace("NO", "NO ").replace("  ", " ").strip()
-        
-        # Save it back to a standard key we can rely on
         f['properties']['std_name'] = clean_name
-        f['id'] = clean_name # Helps some map engines link data
+        f['id'] = clean_name 
 
 # --- FIX 2: PREPARE DATAFRAME ---
 if not df.empty: 
-    # Ensure DataFrame uses the same "NO 1" format
     df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ").str.replace("  ", " ").str.strip()
 
 def get_clicked_area_id(lat, lon, geo_data):
@@ -97,7 +90,6 @@ def get_clicked_area_id(lat, lon, geo_data):
     for f in geo_data['features']:
         try:
             if shape(f['geometry']).contains(point):
-                # Return our new standardized name
                 return f['properties'].get('std_name')
         except: continue
     return None
@@ -111,7 +103,7 @@ if geojson_munis:
             cent = geom.centroid
             props = f['properties']
             
-            # Use same robust name logic as the visual layer
+            # Robust Name Logic for the Click Grid
             name = "Unknown"
             if 'kommunenavn' in props: name = props['kommunenavn']
             elif 'navn' in props:
@@ -131,14 +123,14 @@ df_clicks = pd.DataFrame(clickable_points)
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
+    # 1. THE TOGGLE
     show_munis = st.toggle("🔍 View Municipalities", value=False)
     
-    # CHANGE: Point to our new standardized key
+    # Feature key for Price Areas (using the sanitized one)
     feature_key = "properties.std_name"
 
-    # --- LAYER 1: PRICE AREAS ---
+    # --- LAYER 1: PRICE AREAS (Always Visible, No Badges) ---
     if not df.empty:
-        # A. The Main Map (Choropleth)
         fig = px.choropleth_mapbox(
             df, geojson=geojson_areas, locations="price_area_map", featureidkey=feature_key,
             color="avg_value", color_continuous_scale="Viridis",
@@ -148,125 +140,73 @@ with c_map:
             hover_name="price_area_map", 
             hover_data={"price_area_map": False, "avg_value": ":.2f"}
         )
-
-        # B. The Text Labels (Styled Badges)
-        area_labels = []
-        for f in geojson_areas['features']:
-            try:
-                # Get Name & Centroid
-                props = f['properties']
-                name = props.get('std_name')
-                geom = shape(f['geometry'])
-                cent = geom.centroid
-                
-                # Get Value
-                val_row = df[df['price_area_map'] == name]
-                if not val_row.empty:
-                    val = val_row.iloc[0]['avg_value']
-                    
-                    # --- STYLING MAGIC HERE ---
-                    # We use HTML to create hierarchy:
-                    # 1. Big Bold Region Name
-                    # 2. Smaller, lighter Value
-                    label_text = f"<span style='font-size:14px; font-weight:900;'>{name}</span><br><span style='font-size:11px; color:#555;'>{val:.0f} MWh</span>"
-                    
-                    area_labels.append({
-                        "lat": cent.y,
-                        "lon": cent.x,
-                        "text": label_text
-                    })
-            except: continue
-        
-        # 2. Add the labels to the map
-        if area_labels:
-            df_labels = pd.DataFrame(area_labels)
-            fig.add_trace(go.Scattermapbox(
-                lat=df_labels["lat"],
-                lon=df_labels["lon"],
-                mode='markers+text', # Enable Markers AND Text
-                text=df_labels["text"],
-                textposition="middle center",
-                
-                # THE BADGE STYLE (The White Circle Background)
-                marker=dict(
-                    size=65,  # Large enough to fit the text
-                    color='rgba(255, 255, 255, 0.85)', # Semi-transparent white
-                    opacity=1,
-                    allowoverlap=True
-                ),
-                
-                # Text Styling
-                textfont=dict(
-                    family="Arial, sans-serif",
-                    color="black"
-                ),
-                
-                hoverinfo='skip',
-                name="Labels"
-            ))
-
     else:
         # Fallback if no data
         fig = px.choropleth_mapbox(
             geojson=geojson_areas, locations=["NO 1"], featureidkey=feature_key,
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
         )
-    # --- LAYER 2: MUNICIPALITIES ---
 
+    # --- LAYER 2: MUNICIPALITIES (Only if Toggled) ---
     if show_munis and geojson_munis:
-        # We know the file is the same, so we use the logic from the other code
-        # to find the ID, but we force the name key to 'kommunenavn'
+        # Determine ID key
         first = geojson_munis['features'][0]['properties']
         muni_key = "properties.nummer" if 'nummer' in first else ("properties.kommunenummer" if 'kommunenummer' in first else "properties.id")
         
         if muni_key:
             prop = muni_key.split('.')[1]
-            
             locs = []
-            muni_names = []
+            muni_hover_texts = []
             
+            # Robust Name Extraction Loop
             for f in geojson_munis['features']:
-                # 1. Get ID
-                locs.append(f['properties'].get(prop))
+                props = f['properties']
+                locs.append(props.get(prop))
                 
-                # 2. Get Name (CONFIRMED from the other code)
-                # The other code uses 'kommunenavn', so we trust that.
-                name = f['properties'].get('kommunenavn', 'Unknown')
-                muni_names.append(name)
+                # Smart Name Search (Prioritizes 'kommunenavn')
+                name = "Unknown"
+                if 'kommunenavn' in props: name = props['kommunenavn']
+                elif 'navn' in props:
+                    if isinstance(props['navn'], list) and len(props['navn']) > 0:
+                        name = props['navn'][0].get('navn', str(props['navn'][0]))
+                    else:
+                        name = str(props['navn'])
+                elif 'name' in props: name = props['name']
+                
+                muni_hover_texts.append(name)
 
+            # Add the Municipality Borders & Hover Info
             fig.add_trace(go.Choroplethmapbox(
                 geojson=geojson_munis, 
                 locations=locs, 
                 featureidkey=muni_key, 
                 z=[1]*len(locs),
-                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
-                marker_line_color='rgba(20, 20, 20, 0.8)', 
-                marker_line_width=0.8,
+                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], # Transparent Fill
+                marker_line_color='rgba(50, 50, 50, 0.8)', # Dark Grey Borders
+                marker_line_width=0.5,
                 showscale=False, 
-                
-                # THIS IS THE FIX
-                text=muni_names,       
-                hoverinfo='text',      
+                text=muni_hover_texts,  # The names
+                hoverinfo='text',       # Show names on hover
                 name="Municipalities"
             ))
 
-    # --- LAYER 3: CLICK GRID (Invisible) ---
+    # --- LAYER 3: CLICK GRID (Invisible helper) ---
     if not df_clicks.empty:
         fig.add_trace(go.Scattermapbox(
             lat=df_clicks["lat"], lon=df_clicks["lon"],
             mode='markers', 
             marker=go.scattermapbox.Marker(size=12, color='white', opacity=0.01),
-            hoverinfo='text', 
+            hoverinfo='skip', # Don't interfere with visual layers
             text=df_clicks["name"],
             name="Region"
         ))
 
-    # --- LAYER 4: HIGHLIGHT ---
+    # --- LAYER 4: HIGHLIGHT SELECTED AREA ---
     hl_name = st.session_state["selected_price_area"].replace("NO", "NO ")
     fig.add_trace(go.Choroplethmapbox(
         geojson=geojson_areas, locations=[hl_name], featureidkey=feature_key, z=[1],
         colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
-        marker_line_color="red", marker_line_width=4, showscale=False, hoverinfo="skip",
+        marker_line_color="red", marker_line_width=3, showscale=False, hoverinfo="skip",
         name="Selected"
     ))
 
