@@ -117,9 +117,9 @@ def load_yearly_data(data_type, year):
 
     return df
 
-# Legacy alias
+# Legacy aliases
 get_year_data = load_yearly_data
-load_elhub_data = load_yearly_data # Backwards compatibility
+load_elhub_data = load_yearly_data 
 
 # --- 4. API & GEOJSON ---
 
@@ -137,8 +137,6 @@ def fetch_weather_api(lat, lon, start_date, end_date):
         if "hourly" not in js: return pd.DataFrame()
         
         df = pd.DataFrame(js["hourly"])
-        # Do NOT convert timezone here yet, leave as string or naive for the page to handle
-        # or convert safely
         if "time" in df.columns:
              df["time"] = pd.to_datetime(df["time"])
         
@@ -149,9 +147,19 @@ def fetch_weather_api(lat, lon, start_date, end_date):
 
 @st.cache_data
 def load_geojson():
-    """Loads the Price Area polygons."""
+    """Loads the Price Area polygons (elspot_areas.geojson)."""
     try:
         with open('elspot_areas.geojson', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+
+@st.cache_data
+def load_municipality_geojson():
+    """Loads the specific Norwegian Municipality file you uploaded."""
+    filename = 'Basisdata_0000_Norge_4258_Kommune_GeoJSON.geojson'
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         return None
