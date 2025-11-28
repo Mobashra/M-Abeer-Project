@@ -138,6 +138,7 @@ with c_map:
 
     # --- LAYER 1: PRICE AREAS ---
     if not df.empty:
+        # A. The Main Map (Choropleth)
         fig = px.choropleth_mapbox(
             df, geojson=geojson_areas, locations="price_area_map", featureidkey=feature_key,
             color="avg_value", color_continuous_scale="Viridis",
@@ -147,13 +148,52 @@ with c_map:
             hover_name="price_area_map", 
             hover_data={"price_area_map": False, "avg_value": ":.2f"}
         )
+
+        # B. The Text Labels (New Scatter Layer)
+        # 1. Calculate centroids and texts
+        area_labels = []
+        for f in geojson_areas['features']:
+            try:
+                # Get Name
+                props = f['properties']
+                name = props.get('std_name') # This is the sanitized name we created earlier
+                
+                # Get Centroid (Lat/Lon)
+                geom = shape(f['geometry'])
+                cent = geom.centroid
+                
+                # Get Value (MWh) from your DF
+                val_row = df[df['price_area_map'] == name]
+                if not val_row.empty:
+                    val = val_row.iloc[0]['avg_value']
+                    label_text = f"<b>{name}</b><br>{val:.0f} MWh"
+                    
+                    area_labels.append({
+                        "lat": cent.y,
+                        "lon": cent.x,
+                        "text": label_text
+                    })
+            except: continue
+        
+        # 2. Add the labels to the map
+        if area_labels:
+            df_labels = pd.DataFrame(area_labels)
+            fig.add_trace(go.Scattermapbox(
+                lat=df_labels["lat"],
+                lon=df_labels["lon"],
+                mode='text',
+                text=df_labels["text"],
+                textfont=dict(size=12, color='black'),
+                hoverinfo='skip', # Don't interfere with hover
+                name="Labels"
+            ))
+
     else:
         # Fallback if no data
         fig = px.choropleth_mapbox(
             geojson=geojson_areas, locations=["NO 1"], featureidkey=feature_key,
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
         )
-
     # --- LAYER 2: MUNICIPALITIES ---
 
     if show_munis and geojson_munis:
