@@ -13,8 +13,7 @@ utils.render_sidebar()
 # 2. HEADER
 st.title("📊 Energy Statistics")
 
-# --- NEW: Active Area Context ---
-# We retrieve the current selection from session state to show context at the top
+# --- ACTIVE AREA CONTEXT ---
 current_context_area = st.session_state.get("selected_price_area", "NO1")
 st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
@@ -24,7 +23,7 @@ with st.container():
     with c1:
         data_type = st.radio("Data Source", ["Production", "Consumption"], horizontal=True)
     with c2:
-        year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=3)
+        year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
 
 st.divider()
 
@@ -61,18 +60,17 @@ with col_left:
         options=available_areas,
         index=default_index,
         horizontal=True,
-        key="area_radio_selector" # Unique key
+        key="area_radio_selector"
     )
     
-    # Update global session state so the top banner stays in sync on next rerun
+    # Sync session state
     st.session_state["selected_price_area"] = selected_area_radio
 
-    # Filter data for this area
+    # Filter data
     df_area = df[df['price_area'] == selected_area_radio].copy()
 
-    # B. Pie Chart
+    # B. Pie Chart (Left Aligned Styling)
     if not df_area.empty:
-        # Aggregate totals for the whole year
         pie_data = df_area.groupby('group')['mwh'].sum().reset_index().sort_values('mwh', ascending=False)
         
         fig_pie = px.pie(
@@ -83,12 +81,16 @@ with col_left:
             color_discrete_sequence=px.colors.qualitative.Prism,
             title=f"Total {data_type} Mix ({year})"
         )
-        # 1. Add 'width' to force a smaller size and 'margin' to pull it left
-        fig_pie.update_layout(width=400, margin=dict(l=0, r=50, t=30, b=0), legend=dict(orientation="h", y=-0.1))
-
-        # 2. Change use_container_width to False so it respects the fixed width/left alignment
+        
+        # FIX: Manual width and margin to force it left
+        fig_pie.update_layout(
+            width=400, 
+            margin=dict(l=0, r=50, t=30, b=0),
+            legend=dict(orientation="h", y=-0.1)
+        )
+        
+        # FIX: use_container_width=False ensures it respects the 400px width
         st.plotly_chart(fig_pie, use_container_width=False)
-
     else:
         st.warning("No data for this area.")
 
@@ -98,7 +100,7 @@ with col_right:
     st.subheader("2. Seasonal Details")
     
     if not df_area.empty:
-        # A. Pills for Production/Consumption Groups
+        # A. Pills for Groups
         all_groups = sorted(df_area['group'].unique())
         
         selected_groups = st.pills(
@@ -108,22 +110,20 @@ with col_right:
             default=all_groups 
         )
         
-        # B. Month Range Slider (Replaced Dropdown)
+        # B. Month Range Slider (THE FIX: st.select_slider)
         months_map = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 
                       7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
         
-        # Returns a tuple (start, end)
-        start_month, end_month = st.slider(
+        # We use select_slider because it supports 'options' and 'format_func'
+        start_month, end_month = st.select_slider(
             "Select Month Range",
-            min_value=1,
-            max_value=12,
-            value=(1, 12), # Default to full year
-            format_func=lambda x: months_map[x]
+            options=list(months_map.keys()), # The numbers 1-12
+            value=(1, 12),                   # Default Range
+            format_func=lambda x: months_map[x] # Show names (Jan, Feb)
         )
 
         # C. Filter Logic
         if selected_groups:
-            # Filter by Group
             df_filtered = df_area[df_area['group'].isin(selected_groups)].copy()
             
             # Filter by Month Range
@@ -133,13 +133,13 @@ with col_right:
             ]
             
             if not df_filtered.empty:
-                # D. Line Chart
-                # Dynamic Title based on range
+                # Dynamic Title
                 if start_month == end_month:
                     date_range_str = months_map[start_month]
                 else:
                     date_range_str = f"{months_map[start_month]} - {months_map[end_month]}"
 
+                # D. Line Chart
                 fig_line = px.line(
                     df_filtered, 
                     x='date', 
