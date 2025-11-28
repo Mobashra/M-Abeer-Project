@@ -64,20 +64,22 @@ if st.button("Train & Forecast"):
         # Fetch API Data
         df_w = utils.fetch_weather_api(coords['lat'], coords['lon'], start_w.strftime("%Y-%m-%d"), end_w.strftime("%Y-%m-%d"))
         
-        # --- FIX: CHECK IF DATA EXISTS BEFORE PROCESSING ---
         if df_w.empty:
-            st.error(f"Weather API returned no data for range: {start_w.date()} to {end_w.date()}. The Archive API might not have data for the requested future dates.")
+            st.error(f"Weather API returned no data for range: {start_w.date()} to {end_w.date()}.")
             st.stop()
 
         # Handle Timezone safely
-        # utils.py returns 'time' without TZ info but in local time (due to API param). 
-        # We must localize it to match the Energy Data.
         if df_w['time'].dt.tz is None:
             # Localize to Oslo if it's naive
             df_w['time'] = df_w['time'].dt.tz_localize("Europe/Oslo", ambiguous='NaT', nonexistent='shift_forward')
         else:
             # Convert if it already has a TZ
             df_w['time'] = df_w['time'].dt.tz_convert("Europe/Oslo")
+
+        # --- FIX: REMOVE DUPLICATES ---
+        # This handles Daylight Saving Time "fall back" (e.g. 02:00 appearing twice)
+        # We keep the first occurrence to ensure a monotonic index
+        df_w = df_w.drop_duplicates(subset=['time'])
 
         ts_w = df_w.set_index('time')[exog_vars].asfreq('h').interpolate()
         
