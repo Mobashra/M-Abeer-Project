@@ -141,7 +141,7 @@ st.plotly_chart(fig_corr, use_container_width=True)
 
 # Plot 2: Dual Axis Comparison
 st.subheader("Visual Comparison")
-st.markdown("Weather Varibale vs {data_type} Group over Time")
+st.markdown(f"Weather Varibale vs {data_type} Group over Time")
 fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
 
 fig_dual.add_trace(
