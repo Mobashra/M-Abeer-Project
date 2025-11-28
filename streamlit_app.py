@@ -155,21 +155,6 @@ with c_map:
         name="Active Region"
     ))
 
-    # --- LAYER 4: CLICK POINTER (The Pin) ---
-    if "selected_coords" in st.session_state:
-        coords = st.session_state["selected_coords"]
-        fig.add_trace(go.Scattermapbox(
-            lat=[coords['lat']],
-            lon=[coords['lon']],
-            mode='markers+text',
-            marker=go.scattermapbox.Marker(size=14, color='red', symbol='circle'),
-            text=["📍"], # Visual Pin
-            textposition="top center",
-            hoverinfo='text',
-            hovertext=f"Selected: {st.session_state['selected_price_area']}",
-            name="Pointer"
-        ))
-
     # Layout: Taller and Narrower
     fig.update_layout(
         margin=dict(r=0, t=0, l=0, b=0), 
@@ -185,7 +170,7 @@ with c_map:
     if event and "selection" in event and event["selection"]["points"]:
         point = event["selection"]["points"][0]
         
-        # 1. Capture Lat/Lon (Always updates Pin)
+        # 1. Capture Lat/Lon (Background update only, no visual pin)
         if "lat" in point:
             st.session_state["selected_coords"] = {"lat": point["lat"], "lon": point["lon"]}
             
@@ -197,9 +182,6 @@ with c_map:
                 city = utils.CITIES[clicked]
                 st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
                 st.rerun()
-        else:
-            # If we clicked empty space (or Municipality layer with skip), just show pin
-            st.rerun()
 
 with c_info:
     st.info(f"""
@@ -214,6 +196,6 @@ with c_info:
     st.markdown("#### 💡 Guide")
     st.caption("""
     1. **Filter Data** using the top dashboard.
-    2. **Click Map** to select a specific location (Red Pin).
+    2. **Click Map** to select a region and coordinates (for weather analysis).
     3. **Toggle Municipalities** to see local borders.
     """)
