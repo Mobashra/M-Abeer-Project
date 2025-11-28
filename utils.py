@@ -22,15 +22,18 @@ def check_session_state():
     """
     Enforces the rule: User MUST select an area on the map first.
     """
-    if "selected_price_area" not in st.session_state:
+    # Check if the key exists and is not None
+    if "selected_price_area" not in st.session_state or not st.session_state["selected_price_area"]:
         st.error("⛔ **Context Missing**")
         st.warning("Please select a Region on the Map page first.")
         
+        # Link to the Map Page (Ensure the file exists in pages/)
         c1, c2 = st.columns([1, 4])
         with c1:
-            if st.button("Go to Map"):
+            if st.button("Go to Map Selector"):
                 st.switch_page("pages/01_Map_Selector.py")
-        st.stop()
+        
+        st.stop() # Stop execution here
 
 def render_sidebar():
     """
@@ -78,8 +81,12 @@ def get_mongo_collection(collection_name=None):
 @st.cache_data(ttl=3600)
 def load_map_stats(start_date, end_date, data_type, selected_group):
     # Determine Collection
-    coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-    group_col = "production_group" if data_type == "Production" else "consumption_group"
+    if data_type == "Production":
+        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        group_col = "production_group"
+    else:
+        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        group_col = "consumption_group"
 
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
@@ -102,8 +109,12 @@ def load_map_stats(start_date, end_date, data_type, selected_group):
 
 @st.cache_data(ttl=3600)
 def load_yearly_data(data_type, year):
-    coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-    group_col = "production_group" if data_type == "Production" else "consumption_group"
+    if data_type == "Production":
+        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        group_col = "production_group"
+    else:
+        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        group_col = "consumption_group"
 
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
