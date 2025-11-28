@@ -7,6 +7,19 @@ import analysis_functions as af
 st.set_page_config(page_title="Forecasting", layout="wide")
 st.title("📈 Energy Forecasting (SARIMAX)")
 
+# --- SIDEBAR NAVIGATION GROUPS ---
+st.sidebar.markdown("### 🗺️ Exploration")
+# The pages 01, 02, 03 will appear here naturally due to sorting
+
+if st.sidebar.checkbox("Show Advanced Modules", value=True):
+    st.sidebar.markdown("### 🔍 Diagnostics")
+    # Pages 04, 05, 06 fall here visually
+    
+    st.sidebar.markdown("### 🔮 Prediction")
+    # Pages 07, 08 fall here visually
+
+
+
 # --- 1. GLOBAL SETTINGS ---
 # Ensure we have defaults if the user goes straight to this page
 if "selected_price_area" not in st.session_state:
