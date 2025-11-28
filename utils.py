@@ -16,7 +16,7 @@ CITIES = {
 
 WEATHER_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- 2. SIDEBAR STYLING (THE LABELS) ---
+# --- 2. SIDEBAR STYLING (Colored Labels) ---
 SIDEBAR_CSS = """
 <style>
     /* Explorative - Blue */
@@ -46,32 +46,34 @@ SIDEBAR_CSS = """
 """
 
 def render_sidebar():
-    """Applies the colored labels and shows global info."""
+    """Applies styles and shows global context."""
     st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
     
     with st.sidebar:
         st.header("⚡ Energy Atlas")
         st.markdown("---")
         
-        # Global Context Info
-        if "selected_price_area" in st.session_state and st.session_state["selected_price_area"]:
+        if "selected_price_area" in st.session_state:
             st.success(f"**Region:** {st.session_state['selected_price_area']}")
-            
-            if "selected_coords" in st.session_state:
-                coords = st.session_state["selected_coords"]
-                st.caption(f"Lat: {coords['lat']:.2f}, Lon: {coords['lon']:.2f}")
-            
-            if "elevation" in st.session_state:
-                st.caption(f"⛰️ Elevation: {st.session_state['elevation']}m")
-        else:
-            st.warning("⚠️ No Region Selected")
+        
+        if "selected_coords" in st.session_state:
+            c = st.session_state["selected_coords"]
+            st.caption(f"Lat: {c['lat']:.2f}, Lon: {c['lon']:.2f}")
 
         st.markdown("---")
-        # Visual Headers for the Groups
-        st.caption("Navigation Groups")
+        st.caption("Modules")
         st.markdown("🟦 **Explorative**")
         st.markdown("🟩 **Diagnostics**")
         st.markdown("🟪 **Predictive**")
+
+def check_session_state():
+    """Protects pages from crashing if no map selection exists."""
+    if "selected_price_area" not in st.session_state:
+        st.error("⛔ **No Region Selected**")
+        st.warning("Please go to the Map Selector first.")
+        if st.button("Go to Map"):
+            st.switch_page("pages/01_Map_Selector.py")
+        st.stop()
 
 # --- 3. DATA LOADERS ---
 
@@ -86,12 +88,8 @@ def get_mongo_collection(collection_name=None):
 
 @st.cache_data(ttl=3600)
 def load_map_stats(start_date, end_date, data_type, selected_group):
-    if data_type == "Production":
-        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
-        group_col = "production_group"
-    else:
-        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-        group_col = "consumption_group"
+    coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+    group_col = "production_group" if data_type == "Production" else "consumption_group"
 
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
@@ -114,12 +112,8 @@ def load_map_stats(start_date, end_date, data_type, selected_group):
 
 @st.cache_data(ttl=3600)
 def load_yearly_data(data_type, year):
-    if data_type == "Production":
-        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
-        group_col = "production_group"
-    else:
-        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-        group_col = "consumption_group"
+    coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+    group_col = "production_group" if data_type == "Production" else "consumption_group"
 
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
@@ -132,7 +126,6 @@ def load_yearly_data(data_type, year):
         data = list(coll.find({"start_time": {"$gte": start_date, "$lte": end_date}}, projection).limit(500000))
         df = pd.DataFrame(data)
         if not df.empty:
-            # Standardize column names for the app
             df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
             df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
         return df
@@ -161,12 +154,11 @@ def fetch_elevation(lat, lon):
 def load_geojson():
     try: 
         with open('elspot_areas.geojson', 'r', encoding='utf-8') as f: return json.load(f)
-    except: 
-        return None
+    except: return None
 
 @st.cache_data
 def load_municipality_geojson():
     try: 
+        # utf-8-sig to handle the BOM error
         with open('Basisdata_0000_Norge_4258_Kommune_GeoJSON.geojson', 'r', encoding='utf-8-sig') as f: return json.load(f)
-    except: 
-        return None
+    except: return None

@@ -10,10 +10,10 @@ from datetime import date
 # ======================================================
 st.set_page_config(page_title="Map Selector", layout="wide")
 
-# Render Sidebar Colors & Info
+# Render Sidebar (Labels & Info Only)
 utils.render_sidebar()
 
-st.title("Regional Energy Overview")
+st.title("🇳🇴 Regional Energy Overview")
 
 # ======================================================
 # 1. INIT STATE
@@ -49,10 +49,11 @@ with st.container():
         selected_group = st.selectbox("Group", groups, index=0, label_visibility="collapsed")
 
     with c5:
-        st.markdown("###### Price Area")
+        st.markdown("###### Region")
         area_list = sorted(utils.CITIES.keys())
         manual_area = st.selectbox("Region", area_list, index=area_list.index(current_area), label_visibility="collapsed")
         
+        # Fallback Selection Logic
         if manual_area != current_area:
             st.session_state["selected_price_area"] = manual_area
             city = utils.CITIES[manual_area]
@@ -89,7 +90,7 @@ c_map, c_info = st.columns([3, 1])
 
 with c_map:
     # Toggle for Bonus
-    show_munis = st.toggle("🔍 View Municipalities", value=False)
+    show_munis = st.toggle("🔍 Show Municipalities (Bonus)", value=False)
 
     feature_key = "properties.ElSpotOmr"
 
@@ -144,8 +145,8 @@ with c_map:
                 name="Municipalities"
             ))
 
-    # --- LAYER 3: HIGHLIGHT ---
-    hl_name = st.session_state["selected_price_area"]
+    # --- LAYER 3: HIGHLIGHT SELECTED REGION ---
+    hl_name = st.session_state["selected_price_area"].replace("NO", "NO ")
     fig.add_trace(go.Choroplethmapbox(
         geojson=geojson_areas,
         locations=[hl_name],
