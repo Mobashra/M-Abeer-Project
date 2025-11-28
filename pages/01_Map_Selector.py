@@ -206,7 +206,10 @@ with c_info:
         curr = st.session_state["selected_price_area"]
         center = utils.CITIES[curr]
         st.info(f"**Active Region**\n# {curr}")
-        st.caption(f"**Region Center:**\nLat {center['lat']:.4f}, Lon {center['lon']:.4f}")
+        st.caption("**Region Center:**")
+        st.write(f"Lat: {center['lat']:.4f}\n\nLon: {center['lon']:.4f}")
+        
+    
         
         st.divider()
         
