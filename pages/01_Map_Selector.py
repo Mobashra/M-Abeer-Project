@@ -68,7 +68,23 @@ with st.spinner("Loading Map Data..."):
     geojson_munis = utils.load_municipality_geojson()
 
 if not geojson_areas: st.error("Error: 'elspot_areas.geojson' not found."); st.stop()
-if not df.empty: df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ")
+
+# --- FIX 1: SANITIZE PRICE AREA NAMES ---
+# This ensures that "NO1" in data matches "NO 1" in GeoJSON
+if geojson_areas:
+    for f in geojson_areas['features']:
+        p = f['properties']
+        # Find the name (it could be ElSpotOmr, navn, etc.)
+        raw_name = p.get('ElSpotOmr') or p.get('navn') or p.get('name') or p.get('omrnavn') or "Unknown"
+        # Standardize to "NO 1" format
+        clean_name = str(raw_name).replace("NO", "NO ").replace("  ", " ").strip()
+        f['properties']['std_name'] = clean_name
+        f['id'] = clean_name # Vital for Plotly linkage
+
+# --- FIX 2: PREPARE DATAFRAME ---
+if not df.empty: 
+    # Match the DataFrame format to the GeoJSON format "NO 1"
+    df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ").str.replace("  ", " ").str.strip()
 
 def get_clicked_area_id(lat, lon, geo_data):
     """Robust Hit-Testing for Price Areas."""
@@ -77,7 +93,7 @@ def get_clicked_area_id(lat, lon, geo_data):
     for f in geo_data['features']:
         try:
             if shape(f['geometry']).contains(point):
-                return f['properties'].get('ElSpotOmr') or f['properties'].get('ElSpot_omr')
+                return f['properties'].get('std_name')
         except: continue
     return None
 
@@ -89,10 +105,15 @@ if geojson_munis:
             geom = shape(f['geometry'])
             cent = geom.centroid
             props = f['properties']
+            
+            # Smart Name Logic
             name = "Unknown"
-            if 'navn' in props:
-                if isinstance(props['navn'], list) and len(props['navn']) > 0: name = props['navn'][0].get('navn')
-                elif isinstance(props['navn'], str): name = props['navn']
+            if 'kommunenavn' in props: name = props['kommunenavn']
+            elif 'navn' in props:
+                val = props['navn']
+                if isinstance(val, list) and len(val) > 0: name = val[0].get('navn', str(val[0])) if isinstance(val[0], dict) else str(val[0])
+                else: name = str(val)
+            elif 'name' in props: name = props['name']
             
             clickable_points.append({"lat": cent.y, "lon": cent.x, "name": name})
         except: continue
@@ -106,9 +127,11 @@ c_map, c_info = st.columns([3, 1])
 
 with c_map:
     show_munis = st.toggle("🔍 View Municipalities", value=False)
-    feature_key = "properties.ElSpotOmr"
+    
+    # Use the standardized name key we created
+    feature_key = "properties.std_name"
 
-    # --- LAYER 1: PRICE AREAS ---
+    # --- LAYER 1: PRICE AREAS (Always Visible) ---
     if not df.empty:
         fig = px.choropleth_mapbox(
             df, geojson=geojson_areas, locations="price_area_map", featureidkey=feature_key,
@@ -120,23 +143,54 @@ with c_map:
             hover_data={"price_area_map": False, "avg_value": ":.2f"}
         )
     else:
+        # Fallback if no data
         fig = px.choropleth_mapbox(
             geojson=geojson_areas, locations=["NO 1"], featureidkey=feature_key,
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
         )
 
-    # --- LAYER 2: MUNICIPALITIES ---
+    # --- LAYER 2: MUNICIPALITIES (Only if Toggle is ON) ---
     if show_munis and geojson_munis:
+        # 1. Find the ID key
         first = geojson_munis['features'][0]['properties']
         muni_key = "properties.nummer" if 'nummer' in first else ("properties.kommunenummer" if 'kommunenummer' in first else "properties.id")
+        
         if muni_key:
             prop = muni_key.split('.')[1]
-            locs = [f['properties'].get(prop) for f in geojson_munis['features']]
+            locs = []
+            muni_hover_names = []
+            
+            # 2. Extract Data (IDs and Names)
+            for f in geojson_munis['features']:
+                props = f['properties']
+                locs.append(props.get(prop))
+                
+                # Robust Name Search
+                name = "Unknown"
+                if 'kommunenavn' in props: name = props['kommunenavn']
+                elif 'navn' in props:
+                    val = props['navn']
+                    if isinstance(val, list) and len(val) > 0: 
+                        name = val[0].get('navn', str(val[0])) if isinstance(val[0], dict) else str(val[0])
+                    else: 
+                        name = str(val)
+                elif 'name' in props: name = props['name']
+                
+                muni_hover_names.append(name)
+
+            # 3. Add the Trace
             fig.add_trace(go.Choroplethmapbox(
-                geojson=geojson_munis, locations=locs, featureidkey=muni_key, z=[1]*len(locs),
-                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
-                marker_line_color='rgba(20, 20, 20, 0.8)', marker_line_width=0.8,
-                showscale=False, hoverinfo='skip', name="Municipalities"
+                geojson=geojson_munis, 
+                locations=locs, 
+                featureidkey=muni_key, 
+                z=[1]*len(locs),
+                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], # Transparent fill
+                marker_line_color='rgba(20, 20, 20, 0.8)', # Dark borders
+                marker_line_width=0.8,
+                showscale=False, 
+                text=muni_hover_names, # Use extracted names
+                hoverinfo='text',      # Show text on hover
+                name="Municipalities"
             ))
 
     # --- LAYER 3: CLICK GRID (Invisible) ---
@@ -145,7 +199,7 @@ with c_map:
             lat=df_clicks["lat"], lon=df_clicks["lon"],
             mode='markers', 
             marker=go.scattermapbox.Marker(size=12, color='white', opacity=0.01),
-            hoverinfo='text', 
+            hoverinfo='skip', # Don't interfere
             text=df_clicks["name"],
             name="Region"
         ))
