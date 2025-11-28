@@ -37,9 +37,10 @@ def get_mongo_collection(collection_name=None):
 # --- 3. DATA LOADERS ---
 
 @st.cache_data(ttl=3600)
-def load_map_stats(year, days_range, data_type, selected_group):
+def load_map_stats(start_date, end_date, data_type, selected_group):
     """
     Aggregates average Energy values per Price Area for the Map Choropleth.
+    Accepts specific datetime objects for precise range filtering.
     """
     # Determine Collection
     if data_type == "Production":
@@ -52,22 +53,22 @@ def load_map_stats(year, days_range, data_type, selected_group):
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    # Time Filter
-    start_date = datetime(year, 1, 1)
-    end_date = start_date + timedelta(days=days_range)
+    # Convert to datetime if they are date objects (from st.date_input)
+    s_dt = datetime.combine(start_date, datetime.min.time())
+    e_dt = datetime.combine(end_date, datetime.max.time())
 
     # Aggregation Pipeline
     pipeline = [
         {
             "$match": {
-                "start_time": {"$gte": start_date, "$lte": end_date},
+                "start_time": {"$gte": s_dt, "$lte": e_dt},
                 group_col: selected_group
             }
         },
         {
             "$group": {
-                "_id": "$price_area", # Group by NO1, NO2...
-                "avg_value": {"$avg": "$value"} # Calculate Mean
+                "_id": "$price_area", 
+                "avg_value": {"$avg": "$value"}
             }
         }
     ]
