@@ -69,7 +69,7 @@ with st.container():
 st.divider()
 
 # ======================================================
-# 3. HELPER FUNCTIONS
+# 3. HELPER FUNCTIONS (Geometric & Sanitization)
 # ======================================================
 @st.cache_data
 def get_geo_data():
@@ -77,6 +77,38 @@ def get_geo_data():
     areas = utils.load_geojson()
     munis = utils.load_municipality_geojson()
     return areas, munis
+
+def sanitize_geojson(geojson_data, id_keys, name_keys):
+    """
+    Standardizes GeoJSON properties to ensure 'safe_id' and 'safe_name' exist.
+    Prevents KeyError in Folium tooltips.
+    """
+    if not geojson_data: return None
+    
+    for feature in geojson_data['features']:
+        props = feature.setdefault('properties', {})
+        
+        # Find ID
+        found_id = "Unknown"
+        for key in id_keys:
+            if key in props:
+                found_id = props[key]
+                break
+        props['safe_id'] = found_id
+        
+        # Find Name
+        found_name = "Unknown"
+        for key in name_keys:
+            if key in props:
+                val = props[key]
+                if isinstance(val, list) and len(val) > 0:
+                    found_name = val[0].get('navn', 'Unknown')
+                elif isinstance(val, str):
+                    found_name = val
+                break
+        props['safe_name'] = found_name
+        
+    return geojson_data
 
 def get_clicked_area(lat, lon, geojson_data):
     """Mathematical Hit Testing."""
@@ -86,9 +118,7 @@ def get_clicked_area(lat, lon, geojson_data):
         try:
             polygon = shape(feature['geometry'])
             if polygon.contains(point):
-                props = feature['properties']
-                # Try standard keys
-                return props.get('ElSpotOmr') or props.get('ElSpot_omr')
+                return feature['properties'].get('safe_id')
         except:
             continue
     return None
@@ -99,9 +129,15 @@ def get_clicked_area(lat, lon, geojson_data):
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
-    # 1. Fetch Data
+    # 1. Fetch & Sanitize Data
     df = utils.load_map_stats(start_d, end_d, data_type, selected_group)
-    geo_areas, geo_munis = get_geo_data()
+    raw_areas, raw_munis = get_geo_data()
+    
+    # Sanitize Price Areas (Look for ElSpotOmr variants)
+    geo_areas = sanitize_geojson(raw_areas, ['ElSpotOmr', 'ElSpot_omr', 'name'], ['ElSpotOmr', 'name'])
+    
+    # Sanitize Municipalities (Look for nummer/id variants)
+    geo_munis = sanitize_geojson(raw_munis, ['nummer', 'kommunenummer', 'id'], ['navn', 'kommunenavn'])
     
     # 2. Setup Data Dictionary & Color Map
     data_dict = {}
@@ -112,9 +148,9 @@ with c_map:
         min_val = df['avg_value'].min()
         max_val = df['avg_value'].max()
 
-    # Create Viridis Color Scale (Like Plotly)
+    # Viridis Color Scale
     colormap = cm.LinearColormap(
-        colors=['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'], # Viridis Palette
+        colors=['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'],
         vmin=min_val,
         vmax=max_val,
         caption=f"Average {selected_group.capitalize()} (MWh)"
@@ -125,19 +161,16 @@ with c_map:
         location=st.session_state["map_center"],
         zoom_start=st.session_state["map_zoom"],
         tiles="CartoDB positron",
-        control_scale=True,
-        zoom_control=True
+        control_scale=True
     )
-    
-    # Add Color Legend to Map
     colormap.add_to(m)
 
     # 4. Style Function
     def style_function(feature):
-        area_id = feature['properties'].get('ElSpotOmr') or feature['properties'].get('ElSpot_omr')
+        area_id = feature['properties'].get('safe_id')
         
         # Color Logic
-        fill_color = "#cccccc" # Default Grey
+        fill_color = "#cccccc"
         if area_id and area_id in data_dict:
             fill_color = colormap(data_dict[area_id])
             
@@ -147,7 +180,7 @@ with c_map:
         opacity = 0.6
         
         if area_id == st.session_state["selected_price_area"]:
-            color = "#ff0000" # Red Border for Selection
+            color = "#ff0000"
             weight = 3
             opacity = 0.8
 
@@ -163,45 +196,34 @@ with c_map:
     
     # --- Price Areas (Base) ---
     if geo_areas:
-        # Detect key for Price Area tooltip to prevent crash
-        pa_props = geo_areas['features'][0]['properties']
-        pa_key = 'ElSpotOmr' if 'ElSpotOmr' in pa_props else 'ElSpot_omr'
-        
         folium.GeoJson(
             geo_areas,
             style_function=style_function,
-            tooltip=folium.GeoJsonTooltip(fields=[pa_key], aliases=['Area:']),
+            # Point to 'safe_id' which we GUARANTEED exists in sanitize_geojson
+            tooltip=folium.GeoJsonTooltip(fields=['safe_id'], aliases=['Area:']),
             name="Price Areas"
         ).add_to(m)
 
-    # --- Municipalities (Zoom Dependent) ---
+    # --- Municipalities (Zoom > 6) ---
     if current_zoom > 6 and geo_munis:
-        # AUTO-DETECT KEY (The Fix for KeyError)
-        muni_props = geo_munis['features'][0]['properties']
-        muni_key = None
-        if 'nummer' in muni_props: muni_key = 'nummer'
-        elif 'kommunenummer' in muni_props: muni_key = 'kommunenummer'
-        elif 'id' in muni_props: muni_key = 'id'
-        
-        # Only add layer if we found a valid key
-        if muni_key:
-            folium.GeoJson(
-                geo_munis,
-                style_function=lambda x: {
-                    "fillColor": "transparent",
-                    "color": "#000000",
-                    "weight": 0.8,
-                    "dashArray": "5, 5",
-                },
-                tooltip=folium.GeoJsonTooltip(
-                    fields=[muni_key], 
-                    aliases=['Municipality ID:'],
-                    sticky=False
-                ),
-                name="Municipalities"
-            ).add_to(m)
+        folium.GeoJson(
+            geo_munis,
+            style_function=lambda x: {
+                "fillColor": "transparent",
+                "color": "#000000",
+                "weight": 0.8,
+                "dashArray": "5, 5",
+            },
+            # Use safe keys
+            tooltip=folium.GeoJsonTooltip(
+                fields=['safe_name', 'safe_id'], 
+                aliases=['Municipality:', 'ID:'],
+                sticky=False
+            ),
+            name="Municipalities"
+        ).add_to(m)
 
-    # 6. The Pointer
+    # 6. Pointer
     if st.session_state["selected_coords"]:
         coords = st.session_state["selected_coords"]
         folium.Marker(
@@ -224,7 +246,6 @@ with c_map:
         # Zoom Update
         if map_data["zoom"] != st.session_state["map_zoom"]:
             st.session_state["map_zoom"] = map_data["zoom"]
-            # Keep center
             bounds = map_data["bounds"]
             if bounds:
                 lat = (bounds["_southWest"]["lat"] + bounds["_northEast"]["lat"]) / 2
@@ -240,11 +261,10 @@ with c_map:
             prev_lat = st.session_state["selected_coords"]["lat"]
             prev_lon = st.session_state["selected_coords"]["lon"]
             
-            # If new click
             if abs(lat - prev_lat) > 0.0001 or abs(lon - prev_lon) > 0.0001:
                 st.session_state["selected_coords"] = {"lat": lat, "lon": lon}
                 
-                # Hit Test Area
+                # Hit Test
                 clicked_area = get_clicked_area(lat, lon, geo_areas)
                 if clicked_area and clicked_area in utils.CITIES:
                     if clicked_area != st.session_state["selected_price_area"]:
