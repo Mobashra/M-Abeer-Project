@@ -32,7 +32,7 @@ current_area = st.session_state["selected_price_area"]
 with st.container():
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        st.markdown("###### Source")
+        st.markdown("###### Data Source")
         data_type = st.radio("Source", ["Production", "Consumption"], horizontal=True, label_visibility="collapsed")
     with c2:
         st.markdown("###### Start Date")
@@ -93,13 +93,7 @@ if geojson_munis:
         try:
             geom = shape(f['geometry'])
             cent = geom.centroid
-            props = f['properties']
-            name = "Unknown"
-            if 'navn' in props:
-                if isinstance(props['navn'], list) and len(props['navn']) > 0: name = props['navn'][0].get('navn')
-                elif isinstance(props['navn'], str): name = props['navn']
-            
-            clickable_points.append({"lat": cent.y, "lon": cent.x, "name": name})
+            clickable_points.append({"lat": cent.y, "lon": cent.x, "name": "Muni"})
         except: continue
 
 df_clicks = pd.DataFrame(clickable_points)
