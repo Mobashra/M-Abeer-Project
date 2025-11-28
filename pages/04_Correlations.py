@@ -1,66 +1,153 @@
 import streamlit as st
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
 import utils
 
-st.set_page_config(page_title="Correlations", layout="wide")
+st.set_page_config(page_title="Correlation Analysis", layout="wide")
 
-utils.check_session_state()
+# 1. STYLING (No safety block here, just styling)
 utils.render_sidebar()
 
-st.title("🔗 Weather-Energy Correlations")
+st.title("🔗 Sliding Window Correlation")
+st.markdown("Analyze how **Weather** drivers impact **Energy** patterns over time.")
 
-# 1. CONTROLS
+# 2. STATE & LOCAL SELECTION LOGIC
+# If no global area is selected, default to NO1
+if "selected_price_area" not in st.session_state:
+    st.session_state["selected_price_area"] = "NO1"
+    default = utils.CITIES["NO1"]
+    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
+
+# 3. CONTROLS
 with st.container():
+    # Added 'Region' as the first column
     c1, c2, c3, c4 = st.columns(4)
-    with c1: year = st.selectbox("Year", [2021, 2022, 2023])
-    with c2: dtype = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
-    with c3: w_var = st.selectbox("Weather Driver", utils.WEATHER_VARS, index=2) # Wind Speed
     
-# 2. DATA PREP
-with st.spinner("Aligning datasets..."):
-    # Load Energy
-    df_e = utils.load_yearly_data(dtype, year)
-    if df_e.empty: st.error("No Energy Data"); st.stop()
-    
-    # Filter Region
-    df_e = df_e[df_e['price_area'] == st.session_state["selected_price_area"]]
-    groups = sorted(df_e['group'].unique())
-    
-    with c4: selected_group = st.selectbox("Energy Group", groups)
-    
-    # Align Series
-    ts_e = df_e[df_e['group'] == selected_group].set_index('date')['mwh'].sort_index().asfreq('h').interpolate()
-    
-    coords = st.session_state["selected_coords"]
-    df_w = utils.fetch_weather_api(coords['lat'], coords['lon'], f"{year}-01-01", f"{year}-12-31")
-    
-    if not df_w.empty:
-        df_w['time'] = pd.to_datetime(df_w['time'], utc=True).dt.tz_convert("Europe/Oslo")
-        ts_w = df_w.set_index('time')[w_var].asfreq('h').interpolate()
+    with c1:
+        # Local Region Selector
+        area_list = sorted(utils.CITIES.keys())
+        current_idx = area_list.index(st.session_state["selected_price_area"]) if st.session_state["selected_price_area"] in area_list else 0
         
-        # Intersection
-        idx = ts_e.index.intersection(ts_w.index)
-        ts_e, ts_w = ts_e.loc[idx], ts_w.loc[idx]
-    else:
+        selected_area = st.selectbox("Region", area_list, index=current_idx)
+        
+        # Update Global State if changed locally
+        if selected_area != st.session_state["selected_price_area"]:
+            st.session_state["selected_price_area"] = selected_area
+            # Update weather coordinates to the region's center
+            city = utils.CITIES[selected_area]
+            st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+            st.rerun()
+
+    with c2:
+        selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
+    with c3:
+        data_type = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
+    with c4:
+        selected_weather = st.selectbox("Weather Variable", utils.WEATHER_VARS, index=2) # Default Wind Speed
+
+# Context Info
+coords = st.session_state["selected_coords"]
+st.info(f"**Analysis Scope:** {selected_area} (Weather Source: {coords['lat']:.2f}, {coords['lon']:.2f})")
+
+# 4. LOAD DATA
+with st.spinner(f"Loading {data_type} data..."):
+    df_energy = utils.load_yearly_data(data_type, selected_year)
+
+if df_energy.empty:
+    st.error(f"No energy data found for {selected_year}.")
+    st.stop()
+
+# Filter by Selected Area
+df_energy_area = df_energy[df_energy['price_area'] == selected_area]
+available_groups = sorted(df_energy_area['group'].unique())
+
+# Group Selector (Dynamic based on data)
+col_grp, col_param = st.columns([1, 2])
+with col_grp:
+    selected_group = st.selectbox(f"Select {data_type} Group", available_groups, index=0)
+
+# 5. DATA PREPARATION
+with st.spinner("Aligning time series..."):
+    # A. Energy Series
+    energy_series = df_energy_area[df_energy_area['group'] == selected_group].set_index('date')['mwh']
+    energy_series = energy_series.sort_index().asfreq('h').interpolate(method='time')
+
+    # B. Weather Data
+    df_weather = utils.fetch_weather_api(coords['lat'], coords['lon'], f"{selected_year}-01-01", f"{selected_year}-12-31")
+    
+    if df_weather.empty:
+        st.error("No weather data found.")
         st.stop()
 
-# 3. PARAMS
-with st.expander("⚙️ Correlation Parameters", expanded=False):
-    c_a, c_b = st.columns(2)
-    window = c_a.slider("Rolling Window (Hours)", 24, 720, 168)
-    lag = c_b.number_input("Lag (Hours)", -24, 24, 0)
+    # C. Align Weather Index
+    if df_weather['time'].dt.tz is None:
+        df_weather['time'] = pd.to_datetime(df_weather['time'], utc=True)
+        
+    df_weather['time'] = df_weather['time'].dt.tz_convert("Europe/Oslo")
+    
+    weather_series = df_weather.set_index('time')[selected_weather]
+    weather_series = weather_series.sort_index().asfreq('h').interpolate(method='time')
 
-# 4. PLOT
+    # D. Intersection
+    common_idx = energy_series.index.intersection(weather_series.index)
+    
+    if len(common_idx) < 24:
+        st.error(f"Data mismatch: Energy and Weather data do not overlap sufficiently for {selected_year}.")
+        st.stop()
+        
+    ts_energy = energy_series.loc[common_idx]
+    ts_weather = weather_series.loc[common_idx]
+
+# 6. ANALYSIS PARAMETERS
+with col_param:
+    with st.expander("⚙️ Sliding Window Parameters", expanded=False):
+        c_a, c_b = st.columns(2)
+        window_size = c_a.slider("Window Size (Hours)", 24, 720, 168)
+        lag = c_b.number_input("Lag (Hours)", -48, 48, 0, help="Positive = Weather leads")
+
+# 7. CALCULATIONS & PLOT
+ts_weather_shifted = ts_weather.shift(lag)
+rolling_corr = ts_energy.rolling(window=window_size).corr(ts_weather_shifted)
+
+# Statistics Row
 st.divider()
-ts_w_shifted = ts_w.shift(lag)
-corr = ts_e.rolling(window=window).corr(ts_w_shifted)
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Avg Correlation", f"{rolling_corr.mean():.2f}")
+m2.metric("Max Correlation", f"{rolling_corr.max():.2f}")
+m3.metric("Min Correlation", f"{rolling_corr.min():.2f}")
+m4.metric("Data Points", len(common_idx))
 
-c_m, c_p = st.columns([1, 3])
-c_m.metric("Avg Correlation", f"{corr.mean():.2f}")
-c_m.metric("Max Correlation", f"{corr.max():.2f}")
+# Plot 1: Correlation Dynamics
+st.subheader("1. Correlation Dynamics")
+fig_corr = go.Figure()
+fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, mode='lines', name='Correlation', line=dict(color='#636EFA', width=2)))
+fig_corr.add_hline(y=0, line_dash="dash", line_color="gray")
+fig_corr.update_layout(height=400, template="plotly_white", yaxis=dict(title="Correlation (-1 to 1)", range=[-1.1, 1.1]))
+st.plotly_chart(fig_corr, use_container_width=True)
 
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=corr.index, y=corr, fill='tozeroy', name="Corr"))
-fig.update_layout(title=f"Rolling Correlation ({selected_group} vs {w_var})", yaxis_range=[-1, 1], height=400)
-c_p.plotly_chart(fig, use_container_width=True)
+# Plot 2: Dual Axis Comparison
+st.subheader("2. Visual Comparison")
+fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
+
+fig_dual.add_trace(
+    go.Scatter(x=ts_energy.index, y=ts_energy, name=f"Energy ({selected_group})", line=dict(color='#EF553B', width=1.5)),
+    secondary_y=False
+)
+fig_dual.add_trace(
+    go.Scatter(x=ts_weather.index, y=ts_weather, name=f"Weather ({selected_weather})", line=dict(color='#00CC96', width=1.5, dash='dot')),
+    secondary_y=True
+)
+
+fig_dual.update_layout(height=500, template="plotly_white", legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"))
+fig_dual.update_yaxes(title_text="Energy (MWh)", secondary_y=False)
+fig_dual.update_yaxes(title_text=selected_weather, secondary_y=True)
+
+st.plotly_chart(fig_dual, use_container_width=True)
+
+st.info("""
+**Interpretation Guide:**
+* **Positive (near +1):** When weather goes UP, Energy goes UP (e.g., High Wind = High Production).
+* **Negative (near -1):** When weather goes UP, Energy goes DOWN (e.g., High Temp = Low Heating Consumption).
+* **Zero:** No clear relationship.
+""")
