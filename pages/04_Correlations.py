@@ -26,47 +26,32 @@ if "selected_price_area" not in st.session_state:
 with st.container():
     c1, c2, c3, c4 = st.columns(4)
     
+    # Column 1: Region Selection
     with c1:
-        data_type = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
-        # Local Region Selector
         area_list = sorted(utils.CITIES.keys())
-        # Safe index finding
         try:
             current_idx = area_list.index(st.session_state["selected_price_area"])
         except ValueError:
-            current_idx = 0 # Default to first if not found
+            current_idx = 0 
         
-        selected_area = st.selectbox("Region", area_list, index=current_idx)
+        # Added key to prevent duplicate ID errors
+        selected_area = st.selectbox("Region", area_list, index=current_idx, key="corr_region_selector")
         
-        # Update Global State
         if selected_area != st.session_state["selected_price_area"]:
             st.session_state["selected_price_area"] = selected_area
             city = utils.CITIES[selected_area]
             st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
             st.rerun()
 
+    # Column 2: Year Selection
     with c2:
-        
-        # Local Region Selector
-        area_list = sorted(utils.CITIES.keys())
-        # Safe index finding
-        try:
-            current_idx = area_list.index(st.session_state["selected_price_area"])
-        except ValueError:
-            current_idx = 0 # Default to first if not found
-        
-        selected_area = st.selectbox("Region", area_list, index=current_idx)
-        
-        # Update Global State
-        if selected_area != st.session_state["selected_price_area"]:
-            st.session_state["selected_price_area"] = selected_area
-            city = utils.CITIES[selected_area]
-            st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
-            st.rerun()
-
-        
-    with c3:
         selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
+
+    # Column 3: Energy Type (Moved here for better layout)
+    with c3:
+        data_type = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
+
+    # Column 4: Weather Variable
     with c4:
         selected_weather = st.selectbox("Weather Variable", utils.WEATHER_VARS, index=2) # Default Wind Speed
 
@@ -84,7 +69,7 @@ if df_energy.empty:
 df_energy_area = df_energy[df_energy['price_area'] == selected_area]
 available_groups = sorted(df_energy_area['group'].unique())
 
-# 5. ANALYSIS CONFIGURATION (Separate Row)
+# 5. ANALYSIS CONFIGURATION
 st.subheader("Analysis Configuration")
 col_grp, col_win, col_lag = st.columns([1, 1, 1])
 
@@ -136,8 +121,10 @@ rolling_corr = ts_energy.rolling(window=window_size).corr(ts_weather_shifted)
 
 # Statistics Row
 st.markdown("### Results")
-m1, m2, m3, m4 = st.columns(4)
+
+# Fixed: Defined columns INSIDE the container so the border wraps them
 with st.container(border=True):
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Avg Correlation", f"{rolling_corr.mean():.2f}")
     m2.metric("Max Correlation", f"{rolling_corr.max():.2f}")
     m3.metric("Min Correlation", f"{rolling_corr.min():.2f}")
@@ -146,6 +133,10 @@ with st.container(border=True):
 # Plot 1: Correlation Dynamics
 st.subheader("Correlation Dynamics")
 st.markdown(f"Sliding window correlation (window={window_size} hrs) with lag of {lag} hours.")
+
+
+
+
 fig_corr = go.Figure()
 fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, mode='lines', name='Correlation', line=dict(color='#636EFA', width=2)))
 fig_corr.add_hline(y=0, line_dash="dash", line_color="gray")
@@ -159,7 +150,13 @@ st.plotly_chart(fig_corr, use_container_width=True)
 
 # Plot 2: Dual Axis Comparison
 st.subheader("Visual Comparison")
-st.markdown(f"Weather Varibale vs {data_type} Group over Time")
+st.markdown(f"Weather Variable vs {data_type} Group over Time") # Fixed typo 'Varibale'
+
+
+
+
+
+
 fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
 
 fig_dual.add_trace(
@@ -181,4 +178,3 @@ fig_dual.update_yaxes(title_text="Energy (MWh)", secondary_y=False)
 fig_dual.update_yaxes(title_text=selected_weather, secondary_y=True)
 
 st.plotly_chart(fig_dual, use_container_width=True)
-
