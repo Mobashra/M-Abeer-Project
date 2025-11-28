@@ -70,17 +70,24 @@ with st.spinner("Loading Map Data..."):
 if not geojson_areas: st.error("Error: 'elspot_areas.geojson' not found."); st.stop()
 
 # --- FIX 1: PRE-PROCESS PRICE AREAS (Sanitize Names) ---
+# This ensures we always have a valid 'name' property to link with
 if geojson_areas:
     for f in geojson_areas['features']:
         p = f['properties']
+        # Try to find the name in common keys
         raw_name = p.get('ElSpotOmr') or p.get('navn') or p.get('name') or p.get('omrnavn') or "Unknown"
-        # Standardize formatting: "NO 1"
+        
+        # Standardize formatting: Ensure "NO 1" format (Space between NO and Number)
+        # This matches your DataFrame's format below.
         clean_name = str(raw_name).replace("NO", "NO ").replace("  ", " ").strip()
+        
+        # Save it back to a standard key we can rely on
         f['properties']['std_name'] = clean_name
-        f['id'] = clean_name 
+        f['id'] = clean_name # Helps some map engines link data
 
 # --- FIX 2: PREPARE DATAFRAME ---
 if not df.empty: 
+    # Ensure DataFrame uses the same "NO 1" format
     df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ").str.replace("  ", " ").str.strip()
 
 def get_clicked_area_id(lat, lon, geo_data):
@@ -90,6 +97,7 @@ def get_clicked_area_id(lat, lon, geo_data):
     for f in geo_data['features']:
         try:
             if shape(f['geometry']).contains(point):
+                # Return our new standardized name
                 return f['properties'].get('std_name')
         except: continue
     return None
@@ -103,7 +111,7 @@ if geojson_munis:
             cent = geom.centroid
             props = f['properties']
             
-            # Robust Name Logic for the Click Grid
+            # Use same robust name logic as the visual layer
             name = "Unknown"
             if 'kommunenavn' in props: name = props['kommunenavn']
             elif 'navn' in props:
@@ -123,13 +131,12 @@ df_clicks = pd.DataFrame(clickable_points)
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
-    # 1. THE TOGGLE
     show_munis = st.toggle("🔍 View Municipalities", value=False)
     
-    # Feature key for Price Areas (using the sanitized one)
+    # CHANGE: Point to our new standardized key
     feature_key = "properties.std_name"
 
-    # --- LAYER 1: PRICE AREAS (Always Visible, No Badges) ---
+    # --- LAYER 1: PRICE AREAS ---
     if not df.empty:
         fig = px.choropleth_mapbox(
             df, geojson=geojson_areas, locations="price_area_map", featureidkey=feature_key,
