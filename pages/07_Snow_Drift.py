@@ -29,13 +29,13 @@ with st.container():
     
     with c1:
         st.markdown("#### 📅 Time Selection")
-        # Range Slider (Matches your picture)
+        # Range Slider matches the "Hydro Year" concept
         year_range = st.slider(
             "Select Hydro Year Range",
-            min_value=2020,
-            max_value=2025,
-            value=(2020, 2024), # Default range
-            help="Select the start and end years for analysis."
+            min_value=2015,
+            max_value=2024,
+            value=(2020, 2023), 
+            help="Select the start and end years. A Hydro Year runs July-June."
         )
         start_year, end_year = year_range
         
@@ -50,7 +50,9 @@ with st.container():
             theta = st.number_input("Relocation (θ)", value=0.5, step=0.1, help="Relocation coefficient")
 
     if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
-        # Define Hydro Year Range: July 1st (Start Year) -> June 30th (End Year + 1)
+        # Define Hydro Year Range: 
+        # Start: July 1st of start_year
+        # End: June 30th of (end_year + 1)
         fetch_start = f"{start_year}-07-01"
         fetch_end = f"{end_year + 1}-06-30"
         
@@ -80,7 +82,7 @@ with st.container():
            
             # A. Annual Totals
             res = af.compute_seasonal_transport(sub, T, F, theta)
-            res['Season'] = f"{y}-{y+1}" # Label as "2021-2022"
+            res['Season'] = f"{y}-{y+1}" 
             
             # B. Fence Heights (Tabler 2003)
             res['Wyoming (m)'] = af.compute_fence_height(res['Qt_kg_m'], "Wyoming")
@@ -95,21 +97,17 @@ with st.container():
                 sector_list.append(af.get_wind_rose_data(drift_events))
             
             # D. Monthly Breakdown (BONUS)
-            # We sort months hydro-logically: July(7) -> Dec(12) -> Jan(1) -> June(6)
             sub['MonthNum'] = sub['time'].dt.month
             hydro_order = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]
             
             for m in hydro_order:
                 m_sub = sub[sub['MonthNum'] == m]
                 if m_sub.empty: continue
-                
-                # Calculate transport just for this month
                 m_res = af.compute_seasonal_transport(m_sub, T, F, theta)
-                
                 monthly_results.append({
                     "Season": f"{y}-{y+1}",
                     "MonthNum": m,
-                    "Month": pd.to_datetime(f"2000-{m}-01").strftime('%b'), # Get name 'Jan', 'Feb'
+                    "Month": pd.to_datetime(f"2000-{m}-01").strftime('%b'),
                     "Qt (tonnes/m)": m_res['Qt_tonnes_m']
                 })
 
@@ -124,7 +122,7 @@ with st.container():
 
         # --- TAB 1: ANNUAL ---
         with tab1:
-            # EQUAL COLUMNS [1, 1] for balanced layout
+            # EQUAL COLUMNS [1, 1] as requested
             c_left, c_right = st.columns([1, 1])
            
             with c_left:
@@ -141,7 +139,6 @@ with st.container():
             with c_right:
                 st.subheader("🌬️ Drift Wind Rose")
                 if sector_list:
-                    # Average the wind rose sectors across all selected years
                     all_sectors = pd.concat(sector_list)
                     avg_rose = all_sectors.groupby('sector_deg')['Qupot_hourly'].mean().reset_index()
                    
@@ -180,7 +177,6 @@ with st.container():
             if monthly_results:
                 df_mon = pd.DataFrame(monthly_results)
                
-                # Sort months correctly for the X-axis (July -> June)
                 month_order = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
                 df_mon['Month'] = pd.Categorical(df_mon['Month'], categories=month_order, ordered=True)
                 df_mon = df_mon.sort_values(['Season', 'Month'])
