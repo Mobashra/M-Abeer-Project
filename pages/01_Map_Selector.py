@@ -128,15 +128,19 @@ df_clicks = pd.DataFrame(clickable_points)
 # ======================================================
 # 4. MAP VISUALIZATION
 # ======================================================
+# ======================================================
+# 4. MAP VISUALIZATION
+# ======================================================
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
+    # 1. The Toggle
     show_munis = st.toggle("🔍 View Municipalities", value=False)
     
-    # CHANGE: Point to our new standardized key
+    # Feature key for Price Areas (using the sanitized one we created)
     feature_key = "properties.std_name"
 
-    # --- LAYER 1: PRICE AREAS ---
+    # --- LAYER 1: PRICE AREAS (Always Visible) ---
     if not df.empty:
         fig = px.choropleth_mapbox(
             df, geojson=geojson_areas, locations="price_area_map", featureidkey=feature_key,
@@ -148,13 +152,14 @@ with c_map:
             hover_data={"price_area_map": False, "avg_value": ":.2f"}
         )
     else:
-        # Fallback if no data
+        # Fallback Map
         fig = px.choropleth_mapbox(
             geojson=geojson_areas, locations=["NO 1"], featureidkey=feature_key,
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
         )
 
-    # --- LAYER 2: MUNICIPALITIES (Only if Toggled) ---
+    # --- LAYER 2: MUNICIPALITIES (Conditional) ---
+    # Only runs if the toggle is ON
     if show_munis and geojson_munis:
         # Determine ID key
         first = geojson_munis['features'][0]['properties']
@@ -170,7 +175,7 @@ with c_map:
                 props = f['properties']
                 locs.append(props.get(prop))
                 
-                # Smart Name Search (Prioritizes 'kommunenavn')
+                # Smart Name Search
                 name = "Unknown"
                 if 'kommunenavn' in props: name = props['kommunenavn']
                 elif 'navn' in props:
@@ -197,7 +202,7 @@ with c_map:
                 name="Municipalities"
             ))
 
-    # --- LAYER 3: CLICK GRID (Invisible helper) ---
+    # --- LAYER 3: CLICK GRID (Invisible helper for clicking) ---
     if not df_clicks.empty:
         fig.add_trace(go.Scattermapbox(
             lat=df_clicks["lat"], lon=df_clicks["lon"],
@@ -225,6 +230,33 @@ with c_map:
             mode='markers', marker=go.scattermapbox.Marker(size=14, color='red', symbol='circle'),
             text=["📍 Pin"], hoverinfo='text', name="Pin"
         ))
+
+    fig.update_layout(margin=dict(r=0, t=0, l=0, b=0), clickmode='event+select', height=600, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01))
+    
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
+
+    # --- INTERACTION LOGIC (Keep existing) ---
+    if event and "selection" in event and event["selection"]["points"]:
+        point = event["selection"]["points"][0]
+        
+        if "lat" in point:
+            clat, clon = point["lat"], point["lon"]
+            st.session_state["selected_coords"] = {"lat": clat, "lon": clon}
+            elev = utils.fetch_elevation(clat, clon)
+            if elev is not None: st.session_state["elevation"] = elev
+            
+            hit_id = get_clicked_area_id(clat, clon, geojson_areas)
+            if hit_id:
+                clean = hit_id.replace(" ", "")
+                if clean in utils.CITIES and clean != st.session_state["selected_price_area"]:
+                    st.session_state["selected_price_area"] = clean
+            st.rerun()
+
+        elif "location" in point:
+            clicked = point["location"].replace(" ", "")
+            if clicked in utils.CITIES and clicked != st.session_state["selected_price_area"]:
+                st.session_state["selected_price_area"] = clicked
+                st.rerun()
 
     fig.update_layout(margin=dict(r=0, t=0, l=0, b=0), clickmode='event+select', height=800, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01))
     
