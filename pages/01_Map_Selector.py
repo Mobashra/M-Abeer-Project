@@ -126,15 +126,16 @@ with c_map:
         )
 
     # --- LAYER 2: MUNICIPALITIES ---
-# --- LAYER 2: MUNICIPALITIES ---
+
     if show_munis and geojson_munis:
+        # We know the file is the same, so we use the logic from the other code
+        # to find the ID, but we force the name key to 'kommunenavn'
         first = geojson_munis['features'][0]['properties']
         muni_key = "properties.nummer" if 'nummer' in first else ("properties.kommunenummer" if 'kommunenummer' in first else "properties.id")
         
         if muni_key:
             prop = muni_key.split('.')[1]
             
-            # Prepare data: Extract IDs and Names in the exact same order
             locs = []
             muni_names = []
             
@@ -142,14 +143,9 @@ with c_map:
                 # 1. Get ID
                 locs.append(f['properties'].get(prop))
                 
-                # 2. Get Name (Using logic from your Click Grid)
-                props = f['properties']
-                name = "Unknown"
-                if 'navn' in props:
-                    if isinstance(props['navn'], list) and len(props['navn']) > 0: 
-                        name = props['navn'][0].get('navn')
-                    elif isinstance(props['navn'], str): 
-                        name = props['navn']
+                # 2. Get Name (CONFIRMED from the other code)
+                # The other code uses 'kommunenavn', so we trust that.
+                name = f['properties'].get('kommunenavn', 'Unknown')
                 muni_names.append(name)
 
             fig.add_trace(go.Choroplethmapbox(
@@ -157,14 +153,14 @@ with c_map:
                 locations=locs, 
                 featureidkey=muni_key, 
                 z=[1]*len(locs),
-                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], # Transparent fill
+                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
                 marker_line_color='rgba(20, 20, 20, 0.8)', 
                 marker_line_width=0.8,
                 showscale=False, 
                 
-                # --- KEY CHANGES HERE ---
-                text=muni_names,       # Pass the list of names
-                hoverinfo='text',      # Enable text hover (was 'skip')
+                # THIS IS THE FIX
+                text=muni_names,       
+                hoverinfo='text',      
                 name="Municipalities"
             ))
 
