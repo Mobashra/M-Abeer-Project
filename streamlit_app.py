@@ -1,12 +1,6 @@
 import streamlit as st
 import utils
 
-
-
-
-
-
-
 # ======================================================
 # PAGE CONFIG
 # ======================================================
@@ -16,99 +10,62 @@ st.set_page_config(
     layout="wide"
 )
 
-
-# --- SIDEBAR NAVIGATION GROUPS ---
-st.sidebar.markdown("### 🗺️ Exploration")
-# The pages 01, 02, 03 will appear here naturally due to sorting
-
-if st.sidebar.checkbox("Show Advanced Modules", value=True):
-    st.sidebar.markdown("### 🔍 Diagnostics")
-    # Pages 04, 05, 06 fall here visually
-    
-    st.sidebar.markdown("### 🔮 Prediction")
-    # Pages 07, 08 fall here visually
-
-
 # ======================================================
-# 1. INITIALIZE GLOBAL STATE (Crucial for App Stability)
+# 1. INITIALIZE GLOBAL STATE
 # ======================================================
-# We set defaults here so other pages don't crash if visited first.
+# Defaults to prevent crashes if user skips the map page
 if "selected_price_area" not in st.session_state:
     st.session_state["selected_price_area"] = "NO1"
 
 if "selected_coords" not in st.session_state:
-    # Default to Oslo
     default = utils.CITIES["NO1"]
     st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
 
 # ======================================================
-# 2. HEADER & INTRO
+# 2. HEADER
 # ======================================================
 st.title("⚡ Norwegian Energy & Weather Atlas")
 
 st.markdown("""
-### Welcome to the Energy Analytics Platform
-This application provides a comprehensive suite of tools to analyze the relationship between 
-**Meteorological Events** and **Energy Dynamics** across Norway's price areas.
+### Welcome
+This platform analyzes the relationship between **Meteorological Events** and **Energy Dynamics** across Norway.
+Use the modules below or the sidebar to navigate.
 """)
 
 st.divider()
 
 # ======================================================
-# 3. NAVIGATION HUB (Cards)
+# 3. NAVIGATION CARDS
 # ======================================================
-st.subheader("🚀 Start Analysis")
-
-# We create 3 columns for the 3 main "Groups" of analysis
 c1, c2, c3 = st.columns(3)
 
 with c1:
-    st.markdown("### 🗺️ Exploration")
-    st.info("**Descriptive Analytics**")
-    st.markdown("""
-    Visualize historical data and trends.
-    * **Map Selector:** Choose regions & coordinates.
-    * **Energy Stats:** Production/Consumption trends.
-    * **Weather Stats:** Historical ERA5 data.
-    """)
-    # Direct Link to the Map Page
-    st.page_link("pages/01_🗺️_Map_Selector.py", label="Go to Map", icon="🗺️")
+    st.info("**1. Descriptive Analytics**")
+    st.markdown("Visualize data trends and history.")
+    # Link to the renamed map file
+    st.page_link("pages/01_Map_Selector.py", label="Open Map", icon="🗺️")
+    st.page_link("pages/02_Energy_Stats.py", label="Energy Data", icon="📊")
 
 with c2:
-    st.markdown("### 🔍 Diagnostics")
-    st.info("**Why did it happen?**")
-    st.markdown("""
-    Deep dive into anomalies and patterns.
-    * **Correlations:** Weather vs. Energy impact.
-    * **Anomalies:** Detect outliers (SPC/LOF).
-    * **Signals:** Frequency analysis (STL).
-    """)
-    st.page_link("pages/04_🔗_Correlations.py", label="Analyze Correlations", icon="🔗")
+    st.info("**2. Diagnostic Analysis**")
+    st.markdown("Investigate anomalies and correlations.")
+    st.page_link("pages/04_Correlations.py", label="Correlations", icon="🔗")
+    st.page_link("pages/05_Anomalies.py", label="Anomalies", icon="🚨")
 
 with c3:
-    st.markdown("### 🔮 Prediction")
-    st.info("**What will happen?**")
-    st.markdown("""
-    Forecast future events.
-    * **Snow Drift:** Physics-based accumulation.
-    * **Forecasting:** SARIMAX Energy prediction.
-    """)
-    st.page_link("pages/08_📈_Forecasting.py", label="Go to Forecasting", icon="📈")
+    st.info("**3. Predictive Modelling**")
+    st.markdown("Forecast future conditions.")
+    st.page_link("pages/07_Snow_Drift.py", label="Snow Drift", icon="❄️")
+    st.page_link("pages/08_Forecasting.py", label="Forecasting", icon="📈")
 
 st.divider()
 
 # ======================================================
-# 4. CURRENT STATUS
+# 4. STATUS BAR
 # ======================================================
-st.caption("Global Context Status")
-col_stat1, col_stat2 = st.columns(2)
-
-with col_stat1:
-    st.success(f"**Active Region:** {st.session_state['selected_price_area']}")
-
-with col_stat2:
-    lat = st.session_state['selected_coords']['lat']
-    lon = st.session_state['selected_coords']['lon']
-    st.success(f"**Active Coordinates:** {lat:.2f}, {lon:.2f}")
-
-st.warning("👈 **Tip:** Use the sidebar to navigate between specific modules.")
+# Shows the user what is currently selected in the background
+cols = st.columns(4)
+cols[0].markdown("**Current Context:**")
+cols[1].success(f"Region: {st.session_state['selected_price_area']}")
+cols[2].success(f"Lat: {st.session_state['selected_coords']['lat']:.2f}")
+cols[3].success(f"Lon: {st.session_state['selected_coords']['lon']:.2f}")
