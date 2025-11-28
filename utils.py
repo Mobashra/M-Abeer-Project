@@ -6,7 +6,6 @@ from pymongo import MongoClient
 from datetime import datetime, timedelta
 
 # --- 1. CONSTANTS ---
-# Standard coordinates for Price Area centers (Fallback)
 CITIES = {
     "NO1": {"city": "Oslo", "lat": 59.9139, "lon": 10.7522},
     "NO2": {"city": "Kristiansand", "lat": 58.1467, "lon": 7.9956},
@@ -32,7 +31,7 @@ def get_mongo_collection(collection_name=None):
         else:
             return db[st.secrets["mongo"]["collection"]]
     except Exception as e:
-        print(f"MongoDB Connection Error: {e}") # Log to console
+        print(f"MongoDB Connection Error: {e}")
         return None
 
 # --- 3. DATA LOADERS ---
@@ -41,7 +40,6 @@ def get_mongo_collection(collection_name=None):
 def load_map_stats(year, days_range, data_type, selected_group):
     """
     Aggregates average Energy values per Price Area for the Map Choropleth.
-    Requirement: Color areas based on mean values over time interval.
     """
     # Determine Collection
     if data_type == "Production":
@@ -55,7 +53,6 @@ def load_map_stats(year, days_range, data_type, selected_group):
     if coll is None: return pd.DataFrame()
 
     # Time Filter
-    # We take the whole year as baseline, or a specific range if needed
     start_date = datetime(year, 1, 1)
     end_date = start_date + timedelta(days=days_range)
 
@@ -83,6 +80,7 @@ def load_map_stats(year, days_range, data_type, selected_group):
         df.rename(columns={'_id': 'price_area'}, inplace=True)
         return df
     except Exception as e:
+        print(f"Aggregation Error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -106,19 +104,22 @@ def load_yearly_data(data_type, year):
     
     query = {"start_time": {"$gte": start_date, "$lte": end_date}}
     
-    # Limit to prevent memory crash (adjust limit based on your data size)
+    # Limit to prevent memory crash
     data = list(coll.find(query, projection).limit(500000)) 
     df = pd.DataFrame(data)
 
     if not df.empty:
         df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
-        # Fix Timezone: UTC -> Oslo
-        df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
+        
+        # Safe Timezone Conversion
+        df['date'] = pd.to_datetime(df['date'], utc=True)
+        df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
 
     return df
 
-# Alias for compatibility with old files
+# Legacy alias
 get_year_data = load_yearly_data
+load_elhub_data = load_yearly_data # Backwards compatibility
 
 # --- 4. API & GEOJSON ---
 
@@ -136,15 +137,19 @@ def fetch_weather_api(lat, lon, start_date, end_date):
         if "hourly" not in js: return pd.DataFrame()
         
         df = pd.DataFrame(js["hourly"])
-        df["time"] = pd.to_datetime(df["time"]) # Already local time due to timezone param
+        # Do NOT convert timezone here yet, leave as string or naive for the page to handle
+        # or convert safely
+        if "time" in df.columns:
+             df["time"] = pd.to_datetime(df["time"])
+        
         return df
     except Exception as e:
+        print(f"API Error: {e}")
         return pd.DataFrame()
 
 @st.cache_data
 def load_geojson():
     """Loads the Price Area polygons."""
-    # Ensure you have 'elspot_areas.geojson' in your root folder!
     try:
         with open('elspot_areas.geojson', 'r', encoding='utf-8') as f:
             return json.load(f)
