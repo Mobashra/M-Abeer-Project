@@ -68,7 +68,27 @@ with st.spinner("Loading Map Data..."):
     geojson_munis = utils.load_municipality_geojson()
 
 if not geojson_areas: st.error("Error: 'elspot_areas.geojson' not found."); st.stop()
-if not df.empty: df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ")
+
+# --- FIX 1: PRE-PROCESS PRICE AREAS (Sanitize Names) ---
+# This ensures we always have a valid 'name' property to link with
+if geojson_areas:
+    for f in geojson_areas['features']:
+        p = f['properties']
+        # Try to find the name in common keys
+        raw_name = p.get('ElSpotOmr') or p.get('navn') or p.get('name') or p.get('omrnavn') or "Unknown"
+        
+        # Standardize formatting: Ensure "NO 1" format (Space between NO and Number)
+        # This matches your DataFrame's format below.
+        clean_name = str(raw_name).replace("NO", "NO ").replace("  ", " ").strip()
+        
+        # Save it back to a standard key we can rely on
+        f['properties']['std_name'] = clean_name
+        f['id'] = clean_name # Helps some map engines link data
+
+# --- FIX 2: PREPARE DATAFRAME ---
+if not df.empty: 
+    # Ensure DataFrame uses the same "NO 1" format
+    df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ").str.replace("  ", " ").str.strip()
 
 def get_clicked_area_id(lat, lon, geo_data):
     """Robust Hit-Testing for Price Areas."""
@@ -77,7 +97,8 @@ def get_clicked_area_id(lat, lon, geo_data):
     for f in geo_data['features']:
         try:
             if shape(f['geometry']).contains(point):
-                return f['properties'].get('ElSpotOmr') or f['properties'].get('ElSpot_omr')
+                # Return our new standardized name
+                return f['properties'].get('std_name')
         except: continue
     return None
 
@@ -89,10 +110,15 @@ if geojson_munis:
             geom = shape(f['geometry'])
             cent = geom.centroid
             props = f['properties']
+            
+            # Use same robust name logic as the visual layer
             name = "Unknown"
-            if 'navn' in props:
-                if isinstance(props['navn'], list) and len(props['navn']) > 0: name = props['navn'][0].get('navn')
-                elif isinstance(props['navn'], str): name = props['navn']
+            if 'kommunenavn' in props: name = props['kommunenavn']
+            elif 'navn' in props:
+                val = props['navn']
+                if isinstance(val, list) and len(val) > 0: name = val[0].get('navn', str(val[0])) if isinstance(val[0], dict) else str(val[0])
+                else: name = str(val)
+            elif 'name' in props: name = props['name']
             
             clickable_points.append({"lat": cent.y, "lon": cent.x, "name": name})
         except: continue
@@ -106,7 +132,9 @@ c_map, c_info = st.columns([3, 1])
 
 with c_map:
     show_munis = st.toggle("🔍 View Municipalities", value=False)
-    feature_key = "properties.ElSpotOmr"
+    
+    # CHANGE: Point to our new standardized key
+    feature_key = "properties.std_name"
 
     # --- LAYER 1: PRICE AREAS ---
     if not df.empty:
@@ -120,6 +148,7 @@ with c_map:
             hover_data={"price_area_map": False, "avg_value": ":.2f"}
         )
     else:
+        # Fallback if no data
         fig = px.choropleth_mapbox(
             geojson=geojson_areas, locations=["NO 1"], featureidkey=feature_key,
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
