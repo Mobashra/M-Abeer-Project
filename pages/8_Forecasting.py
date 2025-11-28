@@ -9,10 +9,17 @@ st.title("📈 SARIMAX Forecasting")
 
 # --- SETUP ---
 if "selected_price_area" not in st.session_state: st.session_state["selected_price_area"] = "NO1"
+
+# Safe access to coords
+if "selected_coords" not in st.session_state:
+    st.error("Please go to the Home Page and select a location on the map first.")
+    st.stop()
+
 coords = st.session_state["selected_coords"]
 
 c1, c2 = st.columns(2)
-year = c1.selectbox("Training Year", [2022, 2023, 2024])
+# Limited to historical years where we know we have full data to avoid API gaps
+year = c1.selectbox("Training Year", [2022, 2023], index=1)
 group = c2.text_input("Energy Group (Exact Name)", "hydro") # Flexible input
 
 # --- MODEL PARAMS ---
@@ -35,10 +42,18 @@ if st.button("Train & Forecast"):
     with st.spinner("Preparing Data..."):
         # 1. Load Energy
         df_e = utils.load_yearly_data("Production", year) # Defaulting to Prod
-        if df_e.empty: st.error("No Energy Data"); st.stop()
+        
+        if df_e.empty: 
+            st.error(f"No Energy Data found for {year}. Check your database.")
+            st.stop()
         
         # Filter
         ts_train = df_e[(df_e['price_area'] == st.session_state['selected_price_area']) & (df_e['group'] == group)]
+        
+        if ts_train.empty:
+            st.error(f"No data found for group '{group}' in area '{st.session_state['selected_price_area']}'. Check spelling.")
+            st.stop()
+            
         ts_train = ts_train.set_index('date')['mwh'].sort_index().asfreq('h').interpolate()
         
         # 2. Load Weather (Exog)
@@ -46,14 +61,40 @@ if st.button("Train & Forecast"):
         start_w = ts_train.index.min()
         end_w = ts_train.index.max() + pd.Timedelta(hours=horizon + 24)
         
+        # Fetch API Data
         df_w = utils.fetch_weather_api(coords['lat'], coords['lon'], start_w.strftime("%Y-%m-%d"), end_w.strftime("%Y-%m-%d"))
-        df_w['time'] = pd.to_datetime(df_w['time'], utc=True).dt.tz_convert("Europe/Oslo")
+        
+        # --- FIX: CHECK IF DATA EXISTS BEFORE PROCESSING ---
+        if df_w.empty:
+            st.error(f"Weather API returned no data for range: {start_w.date()} to {end_w.date()}. The Archive API might not have data for the requested future dates.")
+            st.stop()
+
+        # Handle Timezone safely
+        # utils.py returns 'time' without TZ info but in local time (due to API param). 
+        # We must localize it to match the Energy Data.
+        if df_w['time'].dt.tz is None:
+            # Localize to Oslo if it's naive
+            df_w['time'] = df_w['time'].dt.tz_localize("Europe/Oslo", ambiguous='NaT', nonexistent='shift_forward')
+        else:
+            # Convert if it already has a TZ
+            df_w['time'] = df_w['time'].dt.tz_convert("Europe/Oslo")
+
         ts_w = df_w.set_index('time')[exog_vars].asfreq('h').interpolate()
         
         # Align Exog
-        exog_train = ts_w.loc[ts_train.index]
+        # Reindex to match the exact timestamps of energy training data
+        exog_train = ts_w.reindex(ts_train.index)
+        
+        # Create Future Index
         future_idx = pd.date_range(ts_train.index[-1] + pd.Timedelta(hours=1), periods=horizon, freq='h')
-        exog_future = ts_w.reindex(future_idx).fillna(method='ffill')
+        exog_future = ts_w.reindex(future_idx)
+        
+        # Fill missing weather data (crucial for stability)
+        exog_train = exog_train.ffill().bfill()
+        exog_future = exog_future.ffill().bfill()
+        
+        if exog_train.isnull().values.any() or exog_future.isnull().values.any():
+            st.warning("Warning: Some weather data is missing and was backfilled.")
 
     with st.spinner("Fitting SARIMAX..."):
         try:
