@@ -27,6 +27,7 @@ with st.container():
     c1, c2, c3, c4 = st.columns(4)
     
     with c1:
+        data_type = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
         # Local Region Selector
         area_list = sorted(utils.CITIES.keys())
         # Safe index finding
@@ -45,10 +46,27 @@ with st.container():
             st.rerun()
 
     with c2:
-        # Default index=0 is 2021
-        selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
+        
+        # Local Region Selector
+        area_list = sorted(utils.CITIES.keys())
+        # Safe index finding
+        try:
+            current_idx = area_list.index(st.session_state["selected_price_area"])
+        except ValueError:
+            current_idx = 0 # Default to first if not found
+        
+        selected_area = st.selectbox("Region", area_list, index=current_idx)
+        
+        # Update Global State
+        if selected_area != st.session_state["selected_price_area"]:
+            st.session_state["selected_price_area"] = selected_area
+            city = utils.CITIES[selected_area]
+            st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+            st.rerun()
+
+        
     with c3:
-        data_type = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
+        selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
     with c4:
         selected_weather = st.selectbox("Weather Variable", utils.WEATHER_VARS, index=2) # Default Wind Speed
 
