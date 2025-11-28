@@ -49,7 +49,7 @@ def render_sidebar():
     st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
     with st.sidebar:
         st.header("Energy Atlas")
-        st.markdown("---")
+       
         
         # 1. Region (Green - Success)
         # This confirms the user has a valid selection
