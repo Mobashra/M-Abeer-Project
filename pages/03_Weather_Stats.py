@@ -6,8 +6,15 @@ import utils
 
 st.set_page_config(page_title="Weather Statistics", layout="wide")
 
+# --- DEFAULT FALLBACK: Initialize to NO1 if accessed directly ---
+if "selected_price_area" not in st.session_state:
+    st.session_state["selected_price_area"] = "NO1"
+    # Auto-fill coords for NO1
+    city_def = utils.CITIES["NO1"]
+    st.session_state["selected_coords"] = {"lat": city_def["lat"], "lon": city_def["lon"]}
+
 # 1. SAFETY & STYLING
-# Added check_session_state to ensure graceful handling if accessed directly
+# Now this check will always pass because we set the default above
 utils.check_session_state() 
 utils.render_sidebar()
 
@@ -15,40 +22,27 @@ st.title("Weather Data Analysis")
 st.header("Explore Weather Statistics & Trends (2021-2024)")
 
 # --- ACTIVE AREA CONTEXT ---
-# Logic: Get Global State -> Default to it -> Allow Local Override
 global_area = st.session_state.get("selected_price_area", "NO1")
 
-# We determine the local area based on the widget state if it exists, otherwise global
-# But for a simple selectbox without a key, we rely on the variable return
-# We simply display the GLOBAL area first, but the text below will update 
-# once the widget is drawn and selected.
-
 # 2. GLOBAL SETTINGS & LOCAL OVERRIDE
-# We use columns to keep the selector compact (1/4 width)
 c1, c2 = st.columns([1, 3])
 
 with c1:
     area_list = sorted(utils.CITIES.keys())
-    
-    # Determine default index based on GLOBAL selection
     try:
         default_index = area_list.index(global_area)
     except ValueError:
         default_index = 0
     
-    # LOCAL SELECTOR (Does not update Global Session State)
     selected_area_local = st.selectbox(
         "Analysis Region", 
         area_list, 
         index=default_index
     )
 
-# Update the Info Box to reflect the LOCAL selection
 st.info(f"📍 **Currently Viewing:** Price Area **{selected_area_local}**")
 
 # 3. GET COORDINATES FOR LOCAL SELECTION
-# Instead of using st.session_state["selected_coords"] (which is the Global Pin),
-# we look up the coordinates for the chosen local area immediately.
 city_data = utils.CITIES[selected_area_local]
 local_lat = city_data["lat"]
 local_lon = city_data["lon"]
@@ -59,7 +53,6 @@ def get_full_weather_history(lat, lon):
     return utils.fetch_weather_api(lat, lon, "2021-01-01", "2024-12-31")
 
 with st.spinner(f"Fetching weather history for {selected_area_local}..."):
-    # Use the LOCAL coordinates
     df_full = get_full_weather_history(local_lat, local_lon)
 
 if df_full.empty:
@@ -81,22 +74,16 @@ with tab1:
     
     stat_year = st.selectbox("Select Year:", [2021, 2022, 2023, 2024], index=0)
     
-    # Filter for the selected Year
     df_year = df_full[df_full['Year'] == stat_year].copy()
-    
-    # Filter for January (First Month) for the sparkline
     df_jan = df_year[df_year['Month'] == 1].copy()
     
     if not df_year.empty:
         summary_data = []
         for var in utils.WEATHER_VARS:
-            # Stats based on the FULL YEAR
             mean_val = df_year[var].mean()
             std_val = df_year[var].std()
             min_val = df_year[var].min()
             max_val = df_year[var].max()
-            
-            # Sparkline based on JANUARY ONLY
             jan_trend = df_jan[var].tolist()
             
             summary_data.append({
@@ -110,7 +97,6 @@ with tab1:
         
         stats_df = pd.DataFrame(summary_data)
         
-        # Display with clean formatting
         st.dataframe(
             stats_df,
             column_config={
@@ -128,7 +114,7 @@ with tab1:
         st.warning("No data.")
 
 # ==================================================
-# TAB 2: YEARLY TREND (FULL VISUALIZATION)
+# TAB 2: YEARLY TREND
 # ==================================================
 with tab2:
     st.subheader("Yearly Trend Visualization")
@@ -138,7 +124,6 @@ with tab2:
         df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
         unique_months = sorted(df_full['YYYY-MM'].unique())
         
-        # Select Slider for Time Range
         start_month, end_month = st.select_slider(
             "Select Time Range",
             options=unique_months,
@@ -146,7 +131,7 @@ with tab2:
         )
         
     with c2:
-        st.write("") # Spacer
+        st.write("") 
         normalize = st.checkbox("Normalize (0-1)", value=False)
         select_all = st.checkbox("Select All Variables", value=False)
 
@@ -155,31 +140,25 @@ with tab2:
     else:
         default_selection = ["temperature_2m"]
             
-    # Variables Selector
     selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=default_selection, key=f"vars_{select_all}")
 
-    # --- FILTER DATA ---
     start_date = pd.to_datetime(start_month)
     end_date = (pd.to_datetime(end_month) + pd.offsets.MonthEnd(0)) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     
     mask = (df_full['time'] >= start_date) & (df_full['time'] <= end_date)
     df_plot = df_full.loc[mask].copy()
 
-    # --- NORMALIZE ---
     if normalize:
         for col in selected_cols:
             min_v, max_v = df_plot[col].min(), df_plot[col].max()
             if max_v != min_v:
                 df_plot[col] = (df_plot[col] - min_v) / (max_v - min_v)
 
-    # --- PLOTTING ---
     fig = go.Figure()
     
     colors = {
-        "temperature_2m": "#1f77b4",
-        "precipitation": "#2ca02c",
-        "wind_speed_10m": "#ff7f0e",
-        "wind_gusts_10m": "#7f7f7f",
+        "temperature_2m": "#1f77b4", "precipitation": "#2ca02c",
+        "wind_speed_10m": "#ff7f0e", "wind_gusts_10m": "#7f7f7f",
         "wind_direction_10m": "purple"
     }
 
@@ -193,8 +172,7 @@ with tab2:
         ))
 
     fig.update_layout(
-        height=500,
-        template="plotly_white",
+        height=500, template="plotly_white",
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
         margin=dict(l=40, r=40, t=80, b=40),
         xaxis=dict(title="Time", showgrid=False),
