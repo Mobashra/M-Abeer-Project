@@ -13,25 +13,31 @@ st.set_page_config(page_title="Weather Anomalies", layout="wide")
 utils.render_sidebar()
 utils.check_session_state()
 
-# Header Style Matching Image 1
+# Header
 st.title("Weather Anomalies Detection")
 st.header("Temperature Outliers and Precipitation Anomalies")
 st.markdown("Detect unusual weather patterns using advanced statistical methods.")
+
+# --- ACTIVE AREA CONTEXT ---
+current_context_area = st.session_state.get("selected_price_area", "NO1")
+st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+
 st.markdown("---")
 
 # ======================================================
 # DATA LOADING
 # ======================================================
-current_area = st.session_state["selected_price_area"]
+# Ensure coords exist, default to NO1 if not
+if "selected_coords" not in st.session_state:
+    city = utils.CITIES.get(current_context_area, utils.CITIES["NO1"])
+    st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+
 coords = st.session_state["selected_coords"]
 
-# We use a local year selector to fetch data if not already present
-with st.container():
-    c_year, c_info = st.columns([1, 3])
-    with c_year:
-        year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
-    with c_info:
-        st.info(f"📍 Analyzing data for: **{current_area}** ({coords['lat']:.2f}, {coords['lon']:.2f})")
+# Year Selector
+c_year, _ = st.columns([1, 3])
+with c_year:
+    year = st.selectbox("Select Analysis Year", [2021, 2022, 2023, 2024], index=0)
 
 @st.cache_data(ttl=3600)
 def get_data(lat, lon, y):
@@ -44,10 +50,10 @@ if df.empty:
     st.error("No data available.")
     st.stop()
 
-st.success(f"✅ Weather data loaded: {len(df)} records")
+st.success(f"Weather data loaded: {len(df)} records")
 
 # ======================================================
-# LOGIC FUNCTIONS (Matched to Your Example)
+# LOGIC FUNCTIONS
 # ======================================================
 def detect_temperature_outliers(df, freq_cutoff=0.05, n_std=3):
     # 1. Prepare Data
@@ -63,7 +69,7 @@ def detect_temperature_outliers(df, freq_cutoff=0.05, n_std=3):
     temp_dct_filtered[:cutoff_index] = 0
     satv = idct(temp_dct_filtered, type=2, norm='ortho')
     
-    # 4. Filter for Trend (Low Pass) - Reconstruct for dynamic bounds
+    # 4. Filter for Trend (Low Pass)
     temp_dct_trend = np.zeros_like(temp_dct)
     temp_dct_trend[:cutoff_index] = temp_dct[:cutoff_index]
     trend = idct(temp_dct_trend, type=2, norm='ortho')
@@ -142,7 +148,7 @@ def detect_precipitation_anomalies(df, outlier_prop=0.01, n_neighbors=50):
     return fig, n_anom, pct, time[mask], precip[mask]
 
 # ======================================================
-# VISUALIZATION LAYOUT (Matched to Image 1)
+# VISUALIZATION LAYOUT
 # ======================================================
 tab1, tab2 = st.tabs(["🌡️ Temperature Outliers (SPC)", "🌧️ Precipitation Anomalies (LOF)"])
 
@@ -188,8 +194,8 @@ with tab2:
         prop = st.slider("Expected Outlier Proportion", 0.001, 0.05, 0.01, 0.001, format="%.3f")
     with c2:
         neighbors = st.slider("Number of Neighbors", 20, 200, 50, 10)
-        
-    st.info(f"Expecting approximately {int(len(df) * prop)} anomalies.")
+    
+    # REMOVED: The st.info line about expected anomalies
     
     if st.button("Detect Precipitation Anomalies", type="primary", use_container_width=True):
         with st.spinner("Analyzing..."):
