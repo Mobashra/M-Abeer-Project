@@ -159,7 +159,8 @@ def load_municipality_geojson():
     """Loads the specific Norwegian Municipality file you uploaded."""
     filename = 'Basisdata_0000_Norge_4258_Kommune_GeoJSON.geojson'
     try:
-        with open(filename, 'r', encoding='utf-8') as f:
+        # FIX: 'utf-8-sig' handles the hidden BOM character causing your crash
+        with open(filename, 'r', encoding='utf-8-sig') as f:
             return json.load(f)
     except FileNotFoundError:
         return None
