@@ -180,7 +180,7 @@ with c_map:
             hoverinfo='text', 
             text=df_clicks["name"],
             name="Region",
-            showlegend=False  # <--- ADD THIS: Hides "Region" from the legend box
+            showlegend=False 
         ))
 
     # --- LAYER 4: HIGHLIGHT SELECTED AREA ---
@@ -198,7 +198,7 @@ with c_map:
         fig.add_trace(go.Scattermapbox(
             lat=[coords['lat']], lon=[coords['lon']],
             mode='markers', marker=go.scattermapbox.Marker(size=14, color='red', symbol='circle'),
-            text=["📍 Pin"], hoverinfo='text', name="Pin"
+            text=["📍 Pin"], hoverinfo='text', name="Pin", showlegend=False
         ))
 
     # --- LAYER 6: STATIC TEXT LABELS (Moved to END to be ON TOP) ---
@@ -222,7 +222,19 @@ with c_map:
         showlegend=False
     ))
 
- 
+    fig.update_layout(
+        margin=dict(r=0, t=0, l=0, b=0), 
+        clickmode='event+select', 
+        height=800,
+        # MOVE LEGEND TO TOP-LEFT
+        legend=dict(
+            yanchor="top",
+            y=0.98,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255,255,255,0.7)" # Semi-transparent background
+        )
+    )
     
     # RENDER MAP
     event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
