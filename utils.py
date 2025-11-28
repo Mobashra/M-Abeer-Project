@@ -16,50 +16,44 @@ CITIES = {
 
 WEATHER_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- 2. SIDEBAR STYLING (Colored Labels) ---
+# --- 2. SIDEBAR STYLING ---
 SIDEBAR_CSS = """
 <style>
-    /* Explorative - Blue */
     [data-testid="stSidebarNav"] li:has(a[href*="Map_Selector"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Energy_Stats"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Weather_Stats"]) span {
         background: linear-gradient(90deg, #1e3a5f 0%, #2d5a87 100%);
-        color: white !important;
-        padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
+        color: white !important; padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
     }
-    /* Diagnostics - Green */
     [data-testid="stSidebarNav"] li:has(a[href*="Correlations"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Anomalies"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Signal_Processing"]) span {
         background: linear-gradient(90deg, #1a472a 0%, #2d6a4f 100%);
-        color: white !important;
-        padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
+        color: white !important; padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
     }
-    /* Predictive - Purple */
     [data-testid="stSidebarNav"] li:has(a[href*="Snow_Drift"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Forecasting"]) span {
         background: linear-gradient(90deg, #4a1a6b 0%, #6b2d8a 100%);
-        color: white !important;
-        padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
+        color: white !important; padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
     }
 </style>
 """
 
 def render_sidebar():
-    """Applies styles and shows global context."""
     st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
-    
     with st.sidebar:
         st.header("⚡ Energy Atlas")
         st.markdown("---")
-        
         if "selected_price_area" in st.session_state:
             st.success(f"**Region:** {st.session_state['selected_price_area']}")
-        
         if "selected_coords" in st.session_state:
             c = st.session_state["selected_coords"]
             st.caption(f"Lat: {c['lat']:.2f}, Lon: {c['lon']:.2f}")
-
+        
+        # Show Elevation in Sidebar too if available
+        if "elevation" in st.session_state:
+             st.caption(f"⛰️ Elevation: {st.session_state['elevation']}m")
+             
         st.markdown("---")
         st.caption("Modules")
         st.markdown("🟦 **Explorative**")
@@ -67,16 +61,12 @@ def render_sidebar():
         st.markdown("🟪 **Predictive**")
 
 def check_session_state():
-    """Protects pages from crashing if no map selection exists."""
     if "selected_price_area" not in st.session_state:
         st.error("⛔ **No Region Selected**")
-        st.warning("Please go to the Map Selector first.")
-        if st.button("Go to Map"):
-            st.switch_page("pages/01_Map_Selector.py")
+        if st.button("Go to Map"): st.switch_page("pages/01_Map_Selector.py")
         st.stop()
 
 # --- 3. DATA LOADERS ---
-
 @st.cache_resource
 def get_mongo_collection(collection_name=None):
     if "mongo" not in st.secrets: return None
@@ -90,18 +80,12 @@ def get_mongo_collection(collection_name=None):
 def load_map_stats(start_date, end_date, data_type, selected_group):
     coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
     group_col = "production_group" if data_type == "Production" else "consumption_group"
-
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
-
+    
     s_dt = datetime.combine(start_date, datetime.min.time())
     e_dt = datetime.combine(end_date, datetime.max.time())
-
-    pipeline = [
-        {"$match": {"start_time": {"$gte": s_dt, "$lte": e_dt}, group_col: selected_group}},
-        {"$group": {"_id": "$price_area", "avg_value": {"$avg": "$value"}}}
-    ]
-
+    pipeline = [{"$match": {"start_time": {"$gte": s_dt, "$lte": e_dt}, group_col: selected_group}}, {"$group": {"_id": "$price_area", "avg_value": {"$avg": "$value"}}}]
     try:
         data = list(coll.aggregate(pipeline))
         df = pd.DataFrame(data)
@@ -114,14 +98,12 @@ def load_map_stats(start_date, end_date, data_type, selected_group):
 def load_yearly_data(data_type, year):
     coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
     group_col = "production_group" if data_type == "Production" else "consumption_group"
-
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
-
+    
     start_date = datetime(year, 1, 1)
     end_date = datetime(year, 12, 31, 23, 59, 59)
     projection = {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}
-    
     try:
         data = list(coll.find({"start_time": {"$gte": start_date, "$lte": end_date}}, projection).limit(500000))
         df = pd.DataFrame(data)
@@ -145,20 +127,21 @@ def fetch_weather_api(lat, lon, start_date, end_date):
 
 @st.cache_data(ttl=3600*24)
 def fetch_elevation(lat, lon):
+    """Bonus: Fetch elevation data."""
     try:
         r = requests.get(f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}", timeout=5)
-        return r.json()["elevation"][0]
+        if r.status_code == 200:
+            return r.json()["elevation"][0]
     except: return None
+    return None
 
 @st.cache_data
 def load_geojson():
-    try: 
-        with open('elspot_areas.geojson', 'r', encoding='utf-8') as f: return json.load(f)
+    try: with open('elspot_areas.geojson', 'r', encoding='utf-8') as f: return json.load(f)
     except: return None
 
 @st.cache_data
 def load_municipality_geojson():
     try: 
-        # utf-8-sig to handle the BOM error
         with open('Basisdata_0000_Norge_4258_Kommune_GeoJSON.geojson', 'r', encoding='utf-8-sig') as f: return json.load(f)
     except: return None
