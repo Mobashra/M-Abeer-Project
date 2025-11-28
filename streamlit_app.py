@@ -75,10 +75,10 @@ st.markdown('<p class="hero-subtitle">Advanced Analytics for Meteorological Driv
 # UPDATED: Added specific span classes for the colors you wanted to keep
 st.markdown("""
 <p class="big-font">
-    This platform bridges the gap between raw <span class="highlight-teal">Observation Data</span> and 
-    <span class="highlight-indigo">Operational Intelligence</span>. 
+    This platform bridges the gap between raw Observation Data and 
+    Operational Intelligence. 
     By integrating historical grid data with ERA5 weather reanalysis, we provide tools to diagnose 
-    past grid behaviors, detect physical anomalies, and forecast future load risks.
+    <span class="highlight-teal">past grid behaviors</span>, <span class="highlight-indigo">detect physical anomalies</span>, and <span class="highlight-orange">forecast future load risks</span>.
 </p>
 """, unsafe_allow_html=True)
 
