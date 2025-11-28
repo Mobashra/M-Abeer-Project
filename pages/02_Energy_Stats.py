@@ -82,14 +82,7 @@ with col_left:
             title=f"Total {data_type} Mix ({year})"
         )
         
-        # FIX: Manual width and margin to force it left
-        fig_pie.update_layout(
-            width=400, 
-            margin=dict(l=0, r=50, t=30, b=0),
-            legend=dict(orientation="h", y=-0.1)
-        )
-        
-       
+        fig_pie.update_layout(legend=dict(orientation="h", y=0.1))
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.warning("No data for this area.")
