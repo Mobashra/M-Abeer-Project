@@ -16,83 +16,94 @@ CITIES = {
 
 WEATHER_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- 2. DATABASE CONNECTION ---
-@st.cache_resource
-def get_mongo_collection(collection_name=None):
-    try:
-        # Check if secrets exist
-        if "mongo" not in st.secrets:
-            return None
+# --- 2. SESSION & UI HELPERS ---
+
+def check_session_state():
+    """
+    Enforces the rule: User MUST select an area on the map first.
+    """
+    if "selected_price_area" not in st.session_state:
+        st.error("⛔ **Context Missing**")
+        st.warning("Please select a Region on the Map page first.")
         
-        client = MongoClient(st.secrets["mongo"]["uri"])
-        db = client[st.secrets["mongo"]["database"]]
-        if collection_name:
-            return db[collection_name]
+        c1, c2 = st.columns([1, 4])
+        with c1:
+            if st.button("Go to Map"):
+                st.switch_page("pages/01_Map_Selector.py")
+        st.stop()
+
+def render_sidebar():
+    """
+    Renders the Global Context sidebar (Read-Only Info).
+    """
+    with st.sidebar:
+        st.header("⚡ Energy Atlas")
+        st.caption("v2.0 Professional Edition")
+        st.divider()
+        
+        # Global Context Info
+        if "selected_price_area" in st.session_state and st.session_state["selected_price_area"]:
+            st.markdown("### 🌍 Active Context")
+            st.success(f"**Region:** {st.session_state['selected_price_area']}")
+            
+            coords = st.session_state.get("selected_coords", {"lat": 0, "lon": 0})
+            st.code(f"{coords['lat']:.4f}, {coords['lon']:.4f}", language="json")
+            
+            # Bonus: Elevation
+            if "elevation" in st.session_state:
+                st.caption(f"⛰️ Elevation: {st.session_state['elevation']}m")
         else:
-            return db[st.secrets["mongo"]["collection"]]
-    except Exception as e:
-        print(f"MongoDB Connection Error: {e}")
-        return None
+            st.warning("⚠️ No Selection")
+            st.caption("Use the Map to select a region.")
+
+        st.divider()
+        
+        # Navigation Groups (Visual Guide Only)
+        st.caption("Modules")
+        st.markdown("🟦 **Exploration**")
+        st.markdown("🟧 **Diagnostics**")
+        st.markdown("🟪 **Predictive**")
 
 # --- 3. DATA LOADERS ---
 
+@st.cache_resource
+def get_mongo_collection(collection_name=None):
+    if "mongo" not in st.secrets: return None
+    try:
+        client = MongoClient(st.secrets["mongo"]["uri"])
+        db = client[st.secrets["mongo"]["database"]]
+        return db[collection_name] if collection_name else db[st.secrets["mongo"]["collection"]]
+    except: return None
+
 @st.cache_data(ttl=3600)
 def load_map_stats(start_date, end_date, data_type, selected_group):
-    """
-    Aggregates average Energy values per Price Area for the Map Choropleth.
-    Accepts specific datetime objects for precise range filtering.
-    """
     # Determine Collection
-    if data_type == "Production":
-        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
-        group_col = "production_group"
-    else:
-        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-        group_col = "consumption_group"
+    coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+    group_col = "production_group" if data_type == "Production" else "consumption_group"
 
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
 
-    # Convert to datetime if they are date objects (from st.date_input)
     s_dt = datetime.combine(start_date, datetime.min.time())
     e_dt = datetime.combine(end_date, datetime.max.time())
 
-    # Aggregation Pipeline
     pipeline = [
-        {
-            "$match": {
-                "start_time": {"$gte": s_dt, "$lte": e_dt},
-                group_col: selected_group
-            }
-        },
-        {
-            "$group": {
-                "_id": "$price_area", 
-                "avg_value": {"$avg": "$value"}
-            }
-        }
+        {"$match": {"start_time": {"$gte": s_dt, "$lte": e_dt}, group_col: selected_group}},
+        {"$group": {"_id": "$price_area", "avg_value": {"$avg": "$value"}}}
     ]
 
     try:
         data = list(coll.aggregate(pipeline))
         df = pd.DataFrame(data)
         if df.empty: return df
-
         df.rename(columns={'_id': 'price_area'}, inplace=True)
         return df
-    except Exception as e:
-        print(f"Aggregation Error: {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def load_yearly_data(data_type, year):
-    """Fetches raw hourly data for charts."""
-    if data_type == "Production":
-        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
-        group_col = "production_group"
-    else:
-        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-        group_col = "consumption_group"
+    coll_name = st.secrets["mongo"].get("collection", "production_mba_hour") if data_type == "Production" else st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+    group_col = "production_group" if data_type == "Production" else "consumption_group"
 
     coll = get_mongo_collection(coll_name)
     if coll is None: return pd.DataFrame()
@@ -100,68 +111,45 @@ def load_yearly_data(data_type, year):
     start_date = datetime(year, 1, 1)
     end_date = datetime(year, 12, 31, 23, 59, 59)
     
-    # Optimization: Only fetch needed fields
-    projection = {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}
-    
-    query = {"start_time": {"$gte": start_date, "$lte": end_date}}
-    
-    # Limit to prevent memory crash
-    data = list(coll.find(query, projection).limit(500000)) 
-    df = pd.DataFrame(data)
-
-    if not df.empty:
-        df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
-        
-        # Safe Timezone Conversion
-        df['date'] = pd.to_datetime(df['date'], utc=True)
-        df['date'] = df['date'].dt.tz_convert("Europe/Oslo")
-
-    return df
-
-# Legacy aliases
-get_year_data = load_yearly_data
-load_elhub_data = load_yearly_data 
-
-# --- 4. API & GEOJSON ---
+    try:
+        data = list(coll.find({"start_time": {"$gte": start_date, "$lte": end_date}}, 
+                            {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}).limit(500000))
+        df = pd.DataFrame(data)
+        if not df.empty:
+            df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
+            df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
+        return df
+    except: return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
-    """Fetch Open-Meteo Data."""
     hourly_vars = ",".join(WEATHER_VARS)
     url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&hourly={hourly_vars}&timezone=Europe/Oslo"
-    
     try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        js = resp.json()
-        
+        resp = requests.get(url, timeout=10); resp.raise_for_status(); js = resp.json()
         if "hourly" not in js: return pd.DataFrame()
-        
         df = pd.DataFrame(js["hourly"])
-        if "time" in df.columns:
-             df["time"] = pd.to_datetime(df["time"])
-        
+        if "time" in df.columns: df["time"] = pd.to_datetime(df["time"])
         return df
-    except Exception as e:
-        print(f"API Error: {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
+
+@st.cache_data(ttl=3600*24)
+def fetch_elevation(lat, lon):
+    """Bonus: Fetch elevation data."""
+    try:
+        r = requests.get(f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}", timeout=5)
+        return r.json()["elevation"][0]
+    except: return None
 
 @st.cache_data
 def load_geojson():
-    """Loads the Price Area polygons (elspot_areas.geojson)."""
-    try:
-        with open('elspot_areas.geojson', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
+    try: 
+        with open('elspot_areas.geojson', 'r', encoding='utf-8') as f: return json.load(f)
+    except: return None
 
 @st.cache_data
 def load_municipality_geojson():
-    """Loads the specific Norwegian Municipality file you uploaded."""
-    filename = 'Basisdata_0000_Norge_4258_Kommune_GeoJSON.geojson'
-    try:
-        # FIX: 'utf-8-sig' handles the hidden BOM character causing your crash
-        with open(filename, 'r', encoding='utf-8-sig') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
+    try: 
+        # utf-8-sig to handle BOM error
+        with open('Basisdata_0000_Norge_4258_Kommune_GeoJSON.geojson', 'r', encoding='utf-8-sig') as f: return json.load(f)
+    except: return None

@@ -1,89 +1,66 @@
 import streamlit as st
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import pandas as pd
 import utils
-import analysis_functions as af
 
-st.set_page_config(page_title="Signal Processing", page_icon="📡", layout="wide")
-st.title("📡 Signal Processing: STL & Frequency")
+st.set_page_config(page_title="Correlations", layout="wide")
 
-# --- SIDEBAR NAVIGATION GROUPS ---
-st.sidebar.markdown("### 🗺️ Exploration")
-# The pages 01, 02, 03 will appear here naturally due to sorting
+utils.check_session_state()
+utils.render_sidebar()
 
-if st.sidebar.checkbox("Show Advanced Modules", value=True):
-    st.sidebar.markdown("### 🔍 Diagnostics")
-    # Pages 04, 05, 06 fall here visually
+st.title("🔗 Weather-Energy Correlations")
+
+# 1. CONTROLS
+with st.container():
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: year = st.selectbox("Year", [2021, 2022, 2023])
+    with c2: dtype = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
+    with c3: w_var = st.selectbox("Weather Driver", utils.WEATHER_VARS, index=2) # Wind Speed
     
-    st.sidebar.markdown("### 🔮 Prediction")
-    # Pages 07, 08 fall here visually
-
-
-
-if "selected_price_area" not in st.session_state:
-    st.session_state["selected_price_area"] = "NO1"
-
-# --- SIDEBAR CONFIG ---
-with st.sidebar:
-    st.header("Data Source")
-    year = st.selectbox("Year", [2021, 2022, 2023], index=0)
-    data_type = st.radio("Type", ["Production", "Consumption"])
+# 2. DATA PREP
+with st.spinner("Aligning datasets..."):
+    # Load Energy
+    df_e = utils.load_yearly_data(dtype, year)
+    if df_e.empty: st.error("No Energy Data"); st.stop()
     
-    st.divider()
-    st.header("Parameters")
-    # STL Params
-    period = st.number_input("STL Period (Hours)", value=168, help="168 = Weekly seasonality")
-    seasonal = st.number_input("Seasonal Smoother", value=13, step=2)
-    trend = st.number_input("Trend Smoother", value=169, step=2)
+    # Filter Region
+    df_e = df_e[df_e['price_area'] == st.session_state["selected_price_area"]]
+    groups = sorted(df_e['group'].unique())
     
-    # Spectrogram Params
-    win_len = st.slider("Window Length", 50, 500, 256)
+    with c4: selected_group = st.selectbox("Energy Group", groups)
+    
+    # Align Series
+    ts_e = df_e[df_e['group'] == selected_group].set_index('date')['mwh'].sort_index().asfreq('h').interpolate()
+    
+    coords = st.session_state["selected_coords"]
+    df_w = utils.fetch_weather_api(coords['lat'], coords['lon'], f"{year}-01-01", f"{year}-12-31")
+    
+    if not df_w.empty:
+        df_w['time'] = pd.to_datetime(df_w['time'], utc=True).dt.tz_convert("Europe/Oslo")
+        ts_w = df_w.set_index('time')[w_var].asfreq('h').interpolate()
+        
+        # Intersection
+        idx = ts_e.index.intersection(ts_w.index)
+        ts_e, ts_w = ts_e.loc[idx], ts_w.loc[idx]
+    else:
+        st.stop()
 
-# --- LOAD DATA ---
-df = utils.load_yearly_data(data_type, year)
-if df.empty: st.stop()
+# 3. PARAMS
+with st.expander("⚙️ Correlation Parameters", expanded=False):
+    c_a, c_b = st.columns(2)
+    window = c_a.slider("Rolling Window (Hours)", 24, 720, 168)
+    lag = c_b.number_input("Lag (Hours)", -24, 24, 0)
 
-# Filter Area
-df_area = df[df['price_area'] == st.session_state["selected_price_area"]]
-groups = sorted(df_area['group'].unique())
-selected_group = st.selectbox("Select Energy Group", groups)
+# 4. PLOT
+st.divider()
+ts_w_shifted = ts_w.shift(lag)
+corr = ts_e.rolling(window=window).corr(ts_w_shifted)
 
-# Prepare Series
-series = df_area[df_area['group'] == selected_group].set_index('date')['mwh'].sort_index().asfreq('h').interpolate()
+c_m, c_p = st.columns([1, 3])
+c_m.metric("Avg Correlation", f"{corr.mean():.2f}")
+c_m.metric("Max Correlation", f"{corr.max():.2f}")
 
-# --- TABS ---
-tab_stl, tab_spec = st.tabs(["STL Decomposition", "Spectrogram"])
-
-with tab_stl:
-    if st.button("Run STL Decomposition"):
-        with st.spinner("Decomposing..."):
-            try:
-                res = af.compute_stl(series, period=period, seasonal=seasonal, trend=trend)
-                
-                # Create 4-row subplot
-                fig = make_subplots(rows=4, cols=1, shared_xaxes=True, 
-                                    subplot_titles=["Observed", "Trend", "Seasonal", "Residuals"])
-                
-                fig.add_trace(go.Scatter(x=res.observed.index, y=res.observed, name="Observed"), row=1, col=1)
-                fig.add_trace(go.Scatter(x=res.trend.index, y=res.trend, name="Trend", line=dict(color='orange')), row=2, col=1)
-                fig.add_trace(go.Scatter(x=res.seasonal.index, y=res.seasonal, name="Seasonal", line=dict(color='green')), row=3, col=1)
-                fig.add_trace(go.Scatter(x=res.resid.index, y=res.resid, name="Resid", line=dict(width=0.5, color='gray')), row=4, col=1)
-                
-                fig.update_layout(height=800, showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
-            except Exception as e:
-                st.error(f"STL Error: {e}")
-
-with tab_spec:
-    if st.button("Generate Spectrogram"):
-        try:
-            f, t, Sxx = af.compute_spectrogram(series, window_length=win_len)
-            fig = go.Figure(data=go.Heatmap(z=Sxx, x=t, y=f, colorscale='Jet'))
-            fig.update_layout(
-                title="Frequency Intensity over Time",
-                yaxis_title="Frequency (Hz)", xaxis_title="Time",
-                yaxis_range=[0, 0.1]
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Spectrogram Error: {e}")
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=corr.index, y=corr, fill='tozeroy', name="Corr"))
+fig.update_layout(title=f"Rolling Correlation ({selected_group} vs {w_var})", yaxis_range=[-1, 1], height=400)
+c_p.plotly_chart(fig, use_container_width=True)
