@@ -13,7 +13,7 @@ st.set_page_config(page_title="Map Selector", layout="wide")
 # Render Sidebar Colors & Info
 utils.render_sidebar()
 
-st.title("🇳🇴 Regional Energy Overview")
+st.title("Regional Energy Overview")
 
 # ======================================================
 # 1. INIT STATE
@@ -32,24 +32,24 @@ with st.container():
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
-        st.markdown("###### 1. Source")
+        st.markdown("###### Data Source")
         data_type = st.radio("Source", ["Production", "Consumption"], horizontal=True, label_visibility="collapsed")
 
     with c2:
-        st.markdown("###### 2. Start Date")
+        st.markdown("###### Start Date")
         start_d = st.date_input("Start", date(2021, 1, 1), min_value=date(2021, 1, 1), max_value=date(2024, 12, 31), label_visibility="collapsed")
 
     with c3:
-        st.markdown("###### 3. End Date")
+        st.markdown("###### End Date")
         end_d = st.date_input("End", date(2021, 12, 31), min_value=date(2021, 1, 1), max_value=date(2024, 12, 31), label_visibility="collapsed")
 
     with c4:
-        st.markdown("###### 4. Group")
+        st.markdown("###### Group")
         groups = ["hydro", "wind", "thermal", "solar", "other"] if data_type == "Production" else ["cabin", "household", "primary", "secondary", "tertiary"]
         selected_group = st.selectbox("Group", groups, index=0, label_visibility="collapsed")
 
     with c5:
-        st.markdown("###### 5. Region")
+        st.markdown("###### Price Area")
         area_list = sorted(utils.CITIES.keys())
         manual_area = st.selectbox("Region", area_list, index=area_list.index(current_area), label_visibility="collapsed")
         
@@ -89,7 +89,7 @@ c_map, c_info = st.columns([3, 1])
 
 with c_map:
     # Toggle for Bonus
-    show_munis = st.toggle("🔍 Show Municipalities (Bonus)", value=False)
+    show_munis = st.toggle("🔍 View Municipalities", value=False)
 
     feature_key = "properties.ElSpotOmr"
 
@@ -145,7 +145,7 @@ with c_map:
             ))
 
     # --- LAYER 3: HIGHLIGHT ---
-    hl_name = st.session_state["selected_price_area"].replace("NO", "NO ")
+    hl_name = st.session_state["selected_price_area"]
     fig.add_trace(go.Choroplethmapbox(
         geojson=geojson_areas,
         locations=[hl_name],
@@ -196,7 +196,7 @@ with c_info:
     **Active Region**
     # {st.session_state['selected_price_area']}
     
-    **Clicked Coordinates**
+    **Coordinates**
     {st.session_state['selected_coords']['lat']:.4f}, {st.session_state['selected_coords']['lon']:.4f}
     """)
     
