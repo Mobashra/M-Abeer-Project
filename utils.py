@@ -137,7 +137,8 @@ def fetch_elevation(lat, lon):
 
 @st.cache_data
 def load_geojson():
-    try: with open('elspot_areas.geojson', 'r', encoding='utf-8') as f: return json.load(f)
+    try: 
+        with open('elspot_areas.geojson', 'r', encoding='utf-8') as f: return json.load(f)
     except: return None
 
 @st.cache_data
