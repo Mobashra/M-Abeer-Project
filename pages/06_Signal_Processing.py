@@ -20,7 +20,7 @@ st.title("Signal Decomposition & Frequency Analysis")
 
 # --- ACTIVE AREA CONTEXT ---
 current_context_area = st.session_state.get("selected_price_area", "NO1")
-st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+#st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
 # 2. CONTROLS (Dashboard Style)
 with st.container():

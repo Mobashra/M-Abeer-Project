@@ -20,7 +20,7 @@ st.markdown("Detect unusual weather patterns using advanced statistical methods.
 
 # --- ACTIVE AREA CONTEXT ---
 current_context_area = st.session_state.get("selected_price_area")
-st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+#st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
 st.markdown("---")
 

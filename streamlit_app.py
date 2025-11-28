@@ -6,7 +6,6 @@ import utils
 # ======================================================
 st.set_page_config(
     page_title="Energy Atlas",
-    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -19,36 +18,65 @@ utils.render_sidebar()
 # ======================================================
 st.markdown("""
 <style>
-    /* Global Text Styles */
-    .big-font { font-size: 1.15rem; color: #374151; line-height: 1.6; }
-    .hero-title { font-weight: 800; color: #111827; margin-bottom: 0px; }
-    .hero-subtitle { font-size: 1.1rem; color: #6B7280; margin-bottom: 2rem; }
+    /* --- HERO SECTION TEXT --- */
+    /* Removed fixed colors so they adapt to Dark/Light mode automatically */
+    .hero-title { font-weight: 800; margin-bottom: 0px; }
     
-    /* New Color Palette Classes (Nordic/Scientific Theme) */
-    .theme-exp { color: #0F766E; font-weight: bold; } /* Teal */
-    .theme-diag { color: #D97706; font-weight: bold; } /* Amber/Orange */
-    .theme-pred { color: #4338CA; font-weight: bold; } /* Indigo */
+    /* Slight transparency for subtitle instead of gray color */
+    .hero-subtitle { font-size: 1.1rem; opacity: 0.7; margin-bottom: 2rem; }
     
-    /* Card Headers */
-    .card-header-exp { color: #0F766E; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
-    .card-header-diag { color: #D97706; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
-    .card-header-pred { color: #4338CA; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .big-font { font-size: 1.15rem; line-height: 1.6; }
+
+    /* --- HIGHLIGHT COLORS (Brighter for Dark Mode) --- */
+    .highlight-teal { color: #2DD4BF; font-weight: 800; }   /* Bright Teal */
+    .highlight-indigo { color: #818CF8; font-weight: 800; } /* Bright Indigo */
+
+    /* --- THEME HEADERS --- */
+    .theme-exp { color: #2DD4BF; font-weight: 800; font-size: 1.4rem; margin-bottom: 0px; }
+    .sub-exp { color: #14B8A6; font-weight: 600; font-size: 1.0rem; font-style: italic; margin-bottom: 1rem; }
     
-    /* Metrics */
-    .metric-box { background-color: #F3F4F6; padding: 15px; border-radius: 8px; border-left: 4px solid #9CA3AF; }
+    .theme-diag { color: #FB923C; font-weight: 800; font-size: 1.4rem; margin-bottom: 0px; }
+    .sub-diag { color: #EA580C; font-weight: 600; font-size: 1.0rem; font-style: italic; margin-bottom: 1rem; }
+    
+    .theme-pred { color: #818CF8; font-weight: 800; font-size: 1.4rem; margin-bottom: 0px; }
+    .sub-pred { color: #4F46E5; font-weight: 600; font-size: 1.0rem; font-style: italic; margin-bottom: 1rem; }
+
+    /* --- CARD LINKS (Opaque Backgrounds) --- */
+    [data-testid="stPageLink-NavLink"] {
+        background-color: #1F2937;  /* Dark Grey Background for Dark Mode Cards */
+        border: 1px solid #374151;  /* Subtle Dark Border */
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        transition: all 0.2s ease-in-out;
+        margin-bottom: 8px;
+    }
+
+    [data-testid="stPageLink-NavLink"]:hover {
+        background-color: #374151;  /* Lighter Grey on Hover */
+        border-color: #6B7280;
+        transform: translateY(-2px);
+    }
+    
+    /* Force text inside cards to be light/white */
+    [data-testid="stPageLink-NavLink"] p {
+        font-weight: 500;
+        font-size: 1rem;
+        color: #E5E7EB !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
 # HERO SECTION
 # ======================================================
-st.title("⚡ Norwegian Energy & Weather Atlas")
+st.title("Norwegian Energy & Weather Atlas")
 st.markdown('<p class="hero-subtitle">Advanced Analytics for Meteorological Drivers & Grid Dynamics</p>', unsafe_allow_html=True)
 
+# UPDATED: Added specific span classes for the colors you wanted to keep
 st.markdown("""
 <p class="big-font">
-    This platform bridges the gap between raw <span class="theme-exp">Observation Data</span> and 
-    <span class="theme-pred">Operational Intelligence</span>. 
+    This platform bridges the gap between raw <span class="highlight-teal">Observation Data</span> and 
+    <span class="highlight-indigo">Operational Intelligence</span>. 
     By integrating historical grid data with ERA5 weather reanalysis, we provide tools to diagnose 
     past grid behaviors, detect physical anomalies, and forecast future load risks.
 </p>
@@ -57,9 +85,9 @@ st.markdown("""
 st.divider()
 
 # ======================================================
-# DATA ECOSYSTEM (Based on your utils.py)
+# DATA ECOSYSTEM
 # ======================================================
-st.subheader("📚 Data Ecosystem & Methodology")
+st.subheader("Data Ecosystem & Methodology")
 
 with st.container(border=True):
     d1, d2, d3 = st.columns(3)
@@ -72,7 +100,6 @@ with st.container(border=True):
         * **Granularity:** Hourly resolution.
         * **Scope:** Consumption & Production.
         * **Segments:** 5 Price Areas (NO1-NO5).
-        * **Format:** Time-series aggregations.
         """)
     
     with d2:
@@ -80,10 +107,9 @@ with st.container(border=True):
         st.markdown("**Source:** Open-Meteo (ERA5)")
         st.warning("""
         **Dimensions:**
-        * **Variables:** Temp, Wind (10m/Gusts), Precip.
+        * **Variables:** Temp, Wind, Precip.
         * **Derived:** Snow Water Equivalent (SWE).
         * **Analysis:** 5-Day Lag & Rolling Windows.
-        * **Physics:** Tabler (2003) Drift Model.
         """)
         
     with d3:
@@ -91,53 +117,49 @@ with st.container(border=True):
         st.markdown("**Source:** Kartverket & GeoNorge")
         st.success("""
         **Dimensions:**
-        * **Boundaries:** Detailed Municipal GeoJSON.
+        * **Boundaries:** Municipal GeoJSON.
         * **Interaction:** Point-and-click selection.
         * **Elevation:** Dynamic lookups via Mapbox/API.
-        * **Mapping:** Plotly Mapbox Integration.
         """)
 
 st.markdown("### 🧭 Analytic Modules")
 
 # ======================================================
-# NAVIGATION CARDS (Matched to your actual code features)
+# NAVIGATION CARDS
 # ======================================================
-col_exp, col_diag, col_pred = st.columns(3, gap="medium")
+col_exp, col_diag, col_pred = st.columns(3, gap="large")
 
 # --- 1. EXPLORATIVE (TEAL) ---
 with col_exp:
-    with st.container(border=True):
-        st.markdown('<p class="card-header-exp">🟦 Explorative</p>', unsafe_allow_html=True)
-        st.markdown("*\"What is the baseline?\"*")
+    with st.container():
+        st.markdown('<p class="theme-exp">Explorative</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-exp">"What is the baseline?"</p>', unsafe_allow_html=True)
         st.markdown("Visualize spatial distribution and historical baselines.")
+        st.write("") 
         
-        st.divider()
-        
-        st.page_link("pages/01_Map_Selector.py", label="Map Selector", icon="🗺️", help="Interactive Mapbox interface for region selection")
-        st.page_link("pages/02_Energy_Stats.py", label="Energy Statistics", icon="⚡", help="Seasonal trends and production mix (Pie/Line)")
-        st.page_link("pages/03_Weather_Stats.py", label="Weather Statistics", icon="🌤️", help="ERA5 data overview and normalization")
+        st.page_link("pages/01_Map_Selector.py", label="Map Selector", icon="🗺️", help="Interactive Mapbox interface")
+        st.page_link("pages/02_Energy_Stats.py", label="Energy Statistics", icon="⚡", help="Seasonal trends & mix")
+        st.page_link("pages/03_Weather_Stats.py", label="Weather Statistics", icon="🌤️", help="ERA5 data overview")
 
 # --- 2. DIAGNOSTIC (AMBER/ORANGE) ---
 with col_diag:
-    with st.container(border=True):
-        st.markdown('<p class="card-header-diag">🟧 Diagnostic</p>', unsafe_allow_html=True)
-        st.markdown("*\"Why did it happen?\"*")
+    with st.container():
+        st.markdown('<p class="theme-diag">Diagnostic</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-diag">"Why did it happen?"</p>', unsafe_allow_html=True)
         st.markdown("Advanced signal processing to find relationships and outliers.")
+        st.write("") 
         
-        st.divider()
-        
-        st.page_link("pages/04_Correlations.py", label="Correlation Analysis", icon="🔗", help="Sliding window correlations with lag")
-        st.page_link("pages/05_Anomalies.py", label="Anomaly Detection", icon="⚠️", help="DCT (Temperature) and LOF (Precipitation)")
-        st.page_link("pages/06_Signal_Processing.py", label="Signal Processing", icon="📡", help="STL Decomposition & Frequency Spectrograms")
+        st.page_link("pages/04_Correlations.py", label="Correlation Analysis", icon="🔗", help="Sliding window analysis")
+        st.page_link("pages/05_Anomalies.py", label="Anomaly Detection", icon="⚠️", help="DCT & LOF methods")
+        st.page_link("pages/06_Signal_Processing.py", label="Signal Processing", icon="📡", help="STL & Spectrograms")
 
-# --- 3. PREDICTIVE (INDIGO/PURPLE) ---
+# --- 3. PREDICTIVE (INDIGO) ---
 with col_pred:
-    with st.container(border=True):
-        st.markdown('<p class="card-header-pred">🟪 Predictive</p>', unsafe_allow_html=True)
-        st.markdown("*\"What comes next?\"*")
+    with st.container():
+        st.markdown('<p class="theme-pred">Predictive</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sub-pred">"What comes next?"</p>', unsafe_allow_html=True)
         st.markdown("Physics-based risk modeling and time-series forecasting.")
+        st.write("") 
         
-        st.divider()
-        
-        st.page_link("pages/07_Snow_Drift.py", label="Snow Drift Risk", icon="❄️", help="Tabler (2003) Physics Model & Fence Sizing")
-        st.page_link("pages/08_Forecasting.py", label="Load Forecasting", icon="📈", help="SARIMAX with Exogenous Weather variables")
+        st.page_link("pages/07_Snow_Drift.py", label="Snow Drift Risk", icon="❄️", help="Tabler (2003) Physics")
+        st.page_link("pages/08_Forecasting.py", label="Load Forecasting", icon="📈", help="SARIMAX + Exogenous")

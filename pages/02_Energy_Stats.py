@@ -15,7 +15,7 @@ st.title("📊 Energy Statistics")
 
 # --- ACTIVE AREA CONTEXT ---
 current_context_area = st.session_state.get("selected_price_area")
-st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+#st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
 # 3. GLOBAL SETTINGS (Data Source & Year)
 with st.container():
@@ -63,8 +63,7 @@ with col_left:
         key="area_radio_selector"
     )
     
-    # Sync session state
-    st.session_state["selected_price_area"] = selected_area_radio
+    
 
     # Filter data
     df_area = df[df['price_area'] == selected_area_radio].copy()

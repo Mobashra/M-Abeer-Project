@@ -48,25 +48,26 @@ SIDEBAR_CSS = """
 def render_sidebar():
     st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
     with st.sidebar:
-        st.header("⚡ Energy Atlas")
+        st.header("Energy Atlas")
         st.markdown("---")
         
-        # Display context if it exists
+        # 1. Region (Green - Success)
+        # This confirms the user has a valid selection
         if "selected_price_area" in st.session_state:
-            st.success(f"**Region:** {st.session_state['selected_price_area']}")
+            st.success(f"**📍 Active Region**\n\n# {st.session_state['selected_price_area']}")
         
+        # 2. Coordinates (Blue - Info)
+        # Using st.info makes this stand out clearly against the dark background
         if "selected_coords" in st.session_state:
             c = st.session_state["selected_coords"]
-            st.caption(f"Lat: {c['lat']:.2f}, Lon: {c['lon']:.2f}")
+            st.info(f"**🌐 Coordinates**\n\nLat: **{c['lat']:.4f}**\n\nLon: **{c['lon']:.4f}**")
         
+        # 3. Elevation (Orange - Warning)
+        # Using st.warning draws attention to the bonus feature
         if "elevation" in st.session_state:
-             st.caption(f"⛰️ Elevation: {st.session_state['elevation']}m")
+             st.warning(f"**⛰️ Elevation**\n\n**{st.session_state['elevation']}** meters")
              
         st.markdown("---")
-        st.caption("Modules")
-        st.markdown("🟦 **Explorative**")
-        st.markdown("🟩 **Diagnostics**")
-        st.markdown("🟪 **Predictive**")
 
 def check_session_state():
     """

@@ -14,7 +14,7 @@ st.markdown("Analyze how **Weather** drivers impact **Energy** patterns over tim
 
 # --- ACTIVE AREA CONTEXT ---
 current_context_area = st.session_state.get("selected_price_area", "NO1")
-st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+#st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
 # 2. STATE & DEFAULTS
 if "selected_price_area" not in st.session_state:

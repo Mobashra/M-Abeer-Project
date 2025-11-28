@@ -6,57 +6,61 @@ import utils
 
 st.set_page_config(page_title="Weather Statistics", layout="wide")
 
-# 1. SIDEBAR STYLING
+# 1. SAFETY & STYLING
+# Added check_session_state to ensure graceful handling if accessed directly
+utils.check_session_state() 
 utils.render_sidebar()
 
 st.title("Weather Data Analysis")
 st.header("Explore Weather Statistics & Trends (2021-2024)")
 
 # --- ACTIVE AREA CONTEXT ---
-current_context_area = st.session_state.get("selected_price_area", "NO1")
-st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+# Logic: Get Global State -> Default to it -> Allow Local Override
+global_area = st.session_state.get("selected_price_area", "NO1")
 
-# 2. GLOBAL SETTINGS & FALLBACK
-# If no area selected globally, default to NO1
-if "selected_price_area" not in st.session_state or not st.session_state["selected_price_area"]:
-    st.session_state["selected_price_area"] = "NO1"
-    default = utils.CITIES["NO1"]
-    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
+# We determine the local area based on the widget state if it exists, otherwise global
+# But for a simple selectbox without a key, we rely on the variable return
+# We simply display the GLOBAL area first, but the text below will update 
+# once the widget is drawn and selected.
 
-# Local selector that updates global state
+# 2. GLOBAL SETTINGS & LOCAL OVERRIDE
 # We use columns to keep the selector compact (1/4 width)
 c1, c2 = st.columns([1, 3])
 
 with c1:
     area_list = sorted(utils.CITIES.keys())
-    current_area = st.session_state["selected_price_area"]
     
-    selected_area = st.selectbox(
+    # Determine default index based on GLOBAL selection
+    try:
+        default_index = area_list.index(global_area)
+    except ValueError:
+        default_index = 0
+    
+    # LOCAL SELECTOR (Does not update Global Session State)
+    selected_area_local = st.selectbox(
         "Analysis Region", 
         area_list, 
-        index=area_list.index(current_area) if current_area in area_list else 0
+        index=default_index
     )
-    
-    if selected_area != current_area:
-        st.session_state["selected_price_area"] = selected_area
-        city = utils.CITIES[selected_area]
-        st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
-        st.rerun()
 
-# Ensure coords are loaded for the API call
-if "selected_coords" not in st.session_state:
-    city = utils.CITIES[current_area]
-    st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+# Update the Info Box to reflect the LOCAL selection
+st.info(f"📍 **Currently Viewing:** Price Area **{selected_area_local}**")
 
-coords = st.session_state["selected_coords"]
+# 3. GET COORDINATES FOR LOCAL SELECTION
+# Instead of using st.session_state["selected_coords"] (which is the Global Pin),
+# we look up the coordinates for the chosen local area immediately.
+city_data = utils.CITIES[selected_area_local]
+local_lat = city_data["lat"]
+local_lon = city_data["lon"]
 
-# 3. FETCH DATA
+# 4. FETCH DATA
 @st.cache_data(ttl=3600)
 def get_full_weather_history(lat, lon):
     return utils.fetch_weather_api(lat, lon, "2021-01-01", "2024-12-31")
 
-with st.spinner("Fetching weather history (2021-2024)..."):
-    df_full = get_full_weather_history(coords['lat'], coords['lon'])
+with st.spinner(f"Fetching weather history for {selected_area_local}..."):
+    # Use the LOCAL coordinates
+    df_full = get_full_weather_history(local_lat, local_lon)
 
 if df_full.empty:
     st.error("No weather data available.")
@@ -65,7 +69,7 @@ if df_full.empty:
 df_full['Year'] = df_full['time'].dt.year
 df_full['Month'] = df_full['time'].dt.month
 
-# 4. TABS
+# 5. TABS
 tab1, tab2 = st.tabs(["📊 Dataset Overview (First Month)", "📈 Yearly Trend Visualization"])
 
 # ==================================================

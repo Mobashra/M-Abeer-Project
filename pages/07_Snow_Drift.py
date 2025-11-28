@@ -21,7 +21,7 @@ st.title("❄️ Snow Drift Analysis (Tabler 2003)")
 coords = st.session_state["selected_coords"]
 area = st.session_state["selected_price_area"]
 current_context_area = st.session_state.get("selected_price_area")
-st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+#st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 #st.info(f"**Analysis Location:** {area} (Lat: {coords['lat']:.4f}, Lon: {coords['lon']:.4f})")
 
 # 3. CONFIGURATION
