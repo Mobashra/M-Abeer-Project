@@ -29,9 +29,15 @@ with st.container():
     
     with c1:
         st.markdown("#### 📅 Time Selection")
-        # User chooses range of "Hydro Years"
-        start_year = st.number_input("Start Year", 2015, 2023, 2021, help="Year the winter starts (e.g. 2021 = July 2021 to June 2022)")
-        end_year = st.number_input("End Year", min_value=start_year, max_value=2024, value=2023)
+        # UPDATED: Range expanded to 2020-2024 to cover full winters
+        year_range = st.slider(
+            "Select Hydro Year Range",
+            min_value=2020,  # Allows capturing Winter 2021 (July 2020 - June 2021)
+            max_value=2024,  # Allows capturing Winter 2024 (July 2024 - June 2025)
+            value=(2021, 2023), 
+            help="A Hydro Year runs from July 1st to June 30th."
+        )
+        start_year, end_year = year_range
         
     with c2:
         st.markdown("#### ⚙️ Model Parameters")
@@ -43,8 +49,10 @@ with st.container():
         with c_p3:
             theta = st.number_input("Relocation (θ)", value=0.5, step=0.1, help="Relocation coefficient")
 
-    if st.button("🚀 Run Analysis", type="primary"):
-        # Define Hydro Year Range: July 1st (Start Year) -> June 30th (End Year + 1)
+    if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
+        # Define Hydro Year Range:
+        # If user picks 2020, we start July 1, 2020.
+        # If user picks 2024 (as end), we go until June 30, 2025.
         fetch_start = f"{start_year}-07-01"
         fetch_end = f"{end_year + 1}-06-30"
         
@@ -74,7 +82,7 @@ with st.container():
            
             # A. Annual Totals
             res = af.compute_seasonal_transport(sub, T, F, theta)
-            res['Season'] = f"{y}-{y+1}" # Label as "2021-2022"
+            res['Season'] = f"{y}-{y+1}" 
             
             # B. Fence Heights (Tabler 2003)
             res['Wyoming (m)'] = af.compute_fence_height(res['Qt_kg_m'], "Wyoming")
@@ -118,7 +126,8 @@ with st.container():
 
         # --- TAB 1: ANNUAL ---
         with tab1:
-            c_left, c_right = st.columns([2, 1])
+            # EQUAL COLUMNS [1, 1]
+            c_left, c_right = st.columns([1, 1])
            
             with c_left:
                 st.subheader("Total Snow Transport (Qt)")
@@ -131,14 +140,6 @@ with st.container():
                 )
                 st.plotly_chart(fig_annual, use_container_width=True)
                 
-                st.markdown("#### 🚧 Recommended Fence Heights")
-                cols_show = ['Season', 'Qt_tonnes_m', 'Wyoming (m)', 'Slat-Wire (m)', 'Solid (m)']
-                st.dataframe(
-                    df_res[cols_show].style.format("{:.2f}", subset=cols_show[1:]),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
             with c_right:
                 st.subheader("🌬️ Drift Wind Rose")
                 if sector_list:
@@ -163,6 +164,15 @@ with st.container():
                     st.plotly_chart(fig_rose, use_container_width=True)
                 else:
                     st.info("No significant drift wind events.")
+
+            st.divider()
+            st.markdown("#### 🚧 Recommended Fence Heights")
+            cols_show = ['Season', 'Qt_tonnes_m', 'Wyoming (m)', 'Slat-Wire (m)', 'Solid (m)']
+            st.dataframe(
+                df_res[cols_show].style.format("{:.2f}", subset=cols_show[1:]),
+                use_container_width=True,
+                hide_index=True
+            )
 
         # --- TAB 2: MONTHLY (BONUS) ---
         with tab2:
