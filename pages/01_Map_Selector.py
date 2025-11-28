@@ -217,11 +217,7 @@ with c_info:
         
         # 3. ELEVATION (Orange - Custom Style)
         if "elevation" in st.session_state:
-            st.markdown(f"""
-                <div style="background-color: #ffedd5; padding: 1rem; border-radius: 0.5rem; border: 1px solid #fb923c; margin-top: 1rem;">
-                    <p style="margin: 0; font-size: 0.9rem; color: #c2410c; font-weight: bold;">⛰️ Elevation</p>
-                    <p style="margin: 0; font-size: 1.5rem; color: #9a3412; font-weight: bold;">{st.session_state['elevation']} m</p>
-                </div>
-            """, unsafe_allow_html=True)
+            elev = st.session_state["elevation"]
+            st.warning(f"**⛰️ Elevation**\n\n{elev:.1f} meters above sea level")
         else:
             st.caption("Click map to fetch elevation.")
