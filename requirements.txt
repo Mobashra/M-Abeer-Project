@@ -7,3 +7,7 @@ pymongo
 matplotlib
 seaborn
 statsmodels
+scipy
+statsmodels
+requests
+scikit-learn
