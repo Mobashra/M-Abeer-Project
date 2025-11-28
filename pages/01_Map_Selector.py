@@ -149,24 +149,26 @@ with c_map:
             hover_data={"price_area_map": False, "avg_value": ":.2f"}
         )
 
-        # B. The Text Labels (New Scatter Layer)
-        # 1. Calculate centroids and texts
+        # B. The Text Labels (Styled Badges)
         area_labels = []
         for f in geojson_areas['features']:
             try:
-                # Get Name
+                # Get Name & Centroid
                 props = f['properties']
-                name = props.get('std_name') # This is the sanitized name we created earlier
-                
-                # Get Centroid (Lat/Lon)
+                name = props.get('std_name')
                 geom = shape(f['geometry'])
                 cent = geom.centroid
                 
-                # Get Value (MWh) from your DF
+                # Get Value
                 val_row = df[df['price_area_map'] == name]
                 if not val_row.empty:
                     val = val_row.iloc[0]['avg_value']
-                    label_text = f"<b>{name}</b><br>{val:.0f} MWh"
+                    
+                    # --- STYLING MAGIC HERE ---
+                    # We use HTML to create hierarchy:
+                    # 1. Big Bold Region Name
+                    # 2. Smaller, lighter Value
+                    label_text = f"<span style='font-size:14px; font-weight:900;'>{name}</span><br><span style='font-size:11px; color:#555;'>{val:.0f} MWh</span>"
                     
                     area_labels.append({
                         "lat": cent.y,
@@ -181,10 +183,25 @@ with c_map:
             fig.add_trace(go.Scattermapbox(
                 lat=df_labels["lat"],
                 lon=df_labels["lon"],
-                mode='text',
+                mode='markers+text', # Enable Markers AND Text
                 text=df_labels["text"],
-                textfont=dict(size=12, color='black'),
-                hoverinfo='skip', # Don't interfere with hover
+                textposition="middle center",
+                
+                # THE BADGE STYLE (The White Circle Background)
+                marker=dict(
+                    size=65,  # Large enough to fit the text
+                    color='rgba(255, 255, 255, 0.85)', # Semi-transparent white
+                    opacity=1,
+                    allowoverlap=True
+                ),
+                
+                # Text Styling
+                textfont=dict(
+                    family="Arial, sans-serif",
+                    color="black"
+                ),
+                
+                hoverinfo='skip',
                 name="Labels"
             ))
 
