@@ -6,41 +6,34 @@ import utils
 
 st.set_page_config(page_title="Weather Statistics", layout="wide")
 
-# --- 1. GLOBAL FALLBACK (Safety) ---
-# If accessed directly, set global default to NO1 so sidebar works
-if "selected_price_area" not in st.session_state:
-    st.session_state["selected_price_area"] = "NO1"
-    city_def = utils.CITIES["NO1"]
-    st.session_state["selected_coords"] = {"lat": city_def["lat"], "lon": city_def["lon"]}
-
-utils.check_session_state()
+# 1. RENDER SIDEBAR (But DO NOT check/block session state)
 utils.render_sidebar()
 
 st.title("Weather Data Analysis")
 st.header("Explore Weather Statistics & Trends (2021-2024)")
 
-# --- 2. LOCAL SELECTOR LOGIC ---
-# Get the global area to set the DEFAULT position of the dropdown
-global_area = st.session_state.get("selected_price_area", "NO1")
+# --- 2. INTELLIGENT DEFAULT LOGIC ---
+# Try to get global state, but default to NO1 if missing (Read-Only)
+global_area = st.session_state.get("selected_price_area") 
+default_area = global_area if global_area else "NO1"
 
-# Layout Columns
+# Layout Controls
 c1, c2 = st.columns([1, 3])
 
 with c1:
     area_list = sorted(utils.CITIES.keys())
     try:
-        default_index = area_list.index(global_area)
+        start_index = area_list.index(default_area)
     except ValueError:
-        default_index = 0
+        start_index = 0
     
-    # LOCAL WIDGET: changing this DOES NOT update st.session_state["selected_price_area"]
-    local_area = st.selectbox("Analysis Region", area_list, index=default_index)
+    # LOCAL SELECTOR: Changes here do NOT affect the Global Map Pin
+    local_area = st.selectbox("Analysis Region", area_list, index=start_index)
 
-# Update Info box to show the LOCAL selection
 st.info(f"📍 **Currently Viewing:** Price Area **{local_area}**")
 
-# --- 3. DERIVE COORDINATES LOCALLY ---
-# We ignore the global pin. We look up the coords for the local selection.
+# --- 3. DERIVE LOCAL COORDINATES ---
+# We look up coordinates for the LOCAL selection (ignoring global pin)
 city_data = utils.CITIES[local_area]
 local_lat = city_data["lat"]
 local_lon = city_data["lon"]
@@ -60,7 +53,7 @@ if df_full.empty:
 df_full['Year'] = df_full['time'].dt.year
 df_full['Month'] = df_full['time'].dt.month
 
-# --- 5. TABS (Visualizations) ---
+# --- 5. VISUALIZATION TABS ---
 tab1, tab2 = st.tabs(["📊 Dataset Overview", "📈 Yearly Trends"])
 
 with tab1:
@@ -96,10 +89,8 @@ with tab2:
     with c_b:
         st.write("")
         normalize = st.checkbox("Normalize (0-1)", value=False)
-        default_vars = ["temperature_2m"]
-        selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=default_vars)
+        selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=["temperature_2m"])
 
-    # Filter & Plot
     start_date = pd.to_datetime(start_month)
     end_date = (pd.to_datetime(end_month) + pd.offsets.MonthEnd(0)) + pd.Timedelta(days=1)
     mask = (df_full['time'] >= start_date) & (df_full['time'] <= end_date)
