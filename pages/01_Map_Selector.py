@@ -198,7 +198,7 @@ with c_map:
         fig.add_trace(go.Scattermapbox(
             lat=df_clicks["lat"], lon=df_clicks["lon"],
             mode='markers', 
-            marker=go.scattermapbox.Marker(size=100, color='white', opacity=0.01),
+            marker=go.scattermapbox.Marker(size=10000, color='white', opacity=0.0),
             hoverinfo='skip', # Don't interfere
             text=df_clicks["name"],
             name="Region"
