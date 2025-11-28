@@ -145,14 +145,54 @@ with c_map:
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
         )
 
-    # --- LAYER 2: MUNICIPALITIES (Optional) ---
+    # --- LAYER 1.5: STATIC TEXT LABELS (NO1, NO2, ...) ---
+    # This adds permanent text labels using the center coordinates from utils.CITIES
+    lbl_lats = []
+    lbl_lons = []
+    lbl_names = []
+    
+    for area_name, coords in utils.CITIES.items():
+        lbl_names.append(area_name)
+        lbl_lats.append(coords['lat'])
+        lbl_lons.append(coords['lon'])
+
+    fig.add_trace(go.Scattermapbox(
+        lat=lbl_lats,
+        lon=lbl_lons,
+        mode='text',
+        text=lbl_names,
+        textfont=dict(size=24, color='black', family="Arial Black"), # Large, bold text
+        hoverinfo='skip', # Don't interfere with clicks
+        showlegend=False
+    ))
+
+    # --- LAYER 2: MUNICIPALITIES (Optional Outline) ---
     if show_munis and geojson_munis:
-        # ... (Your existing code for municipalities outline goes here) ...
-        # Ensure you keep your existing municipality trace logic
-        pass 
+        # 1. Find the ID key
+        first = geojson_munis['features'][0]['properties']
+        muni_key = "properties.nummer" if 'nummer' in first else ("properties.kommunenummer" if 'kommunenummer' in first else "properties.id")
+        
+        if muni_key:
+            prop = muni_key.split('.')[1]
+            locs = []
+            for f in geojson_munis['features']:
+                locs.append(f['properties'].get(prop))
+
+            fig.add_trace(go.Choroplethmapbox(
+                geojson=geojson_munis, 
+                locations=locs, 
+                featureidkey=muni_key, 
+                z=[1]*len(locs),
+                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], 
+                marker_line_color='rgba(50, 50, 50, 0.5)', 
+                marker_line_width=0.5,
+                showscale=False, 
+                hoverinfo='skip', # Let the invisible layer handle hover
+                name="Municipalities"
+            ))
 
     # --- LAYER 3: CLICK GRID (The "Touch Screen" Layer) ---
-    # FIX A: Use opacity 0.01 (not 0) and size 45 (large but renders correctly)
+    # Size 45 covers gaps. Opacity 0.01 makes it invisible but clickable.
     if not df_clicks.empty:
         fig.add_trace(go.Scattermapbox(
             lat=df_clicks["lat"], lon=df_clicks["lon"],
@@ -186,7 +226,7 @@ with c_map:
     # RENDER MAP
     event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
 
-    # --- INTERACTION LOGIC (THE FIX) ---
+    # --- INTERACTION LOGIC ---
     if event and "selection" in event and event["selection"]["points"]:
         point = event["selection"]["points"][0]
         
@@ -195,7 +235,7 @@ with c_map:
             clat, clon = point["lat"], point["lon"]
             st.session_state["selected_coords"] = {"lat": clat, "lon": clon}
             
-            # Update Region based on this exact point
+            # Update Region
             hit_id = get_clicked_area_id(clat, clon, geojson_areas)
             if hit_id:
                 clean = hit_id.replace(" ", "")
@@ -208,22 +248,17 @@ with c_map:
             
             st.rerun()
 
-        # SCENARIO B: Shape Click (User hit the colored polygon, missed the dot)
-        # This was the missing piece causing your issue!
+        # SCENARIO B: Shape Click (Fallback)
         elif "location" in point:
             clicked_clean = point["location"].replace(" ", "")
             
             if clicked_clean in utils.CITIES:
-                # 1. Update Region
                 st.session_state["selected_price_area"] = clicked_clean
                 
-                # 2. FORCE PIN UPDATE (Snap to Region Center)
-                # Since we don't have mouse coords, we move pin to the region center
-                # so it doesn't get stuck in the old region.
+                # FORCE PIN UPDATE to Region Center
                 center = utils.CITIES[clicked_clean]
                 st.session_state["selected_coords"] = {"lat": center["lat"], "lon": center["lon"]}
                 
-                # 3. Update Elevation for the new center
                 elev = utils.fetch_elevation(center["lat"], center["lon"])
                 if elev is not None: st.session_state["elevation"] = elev
 
