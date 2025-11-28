@@ -16,55 +16,61 @@ CITIES = {
 
 WEATHER_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
-# --- 2. SESSION & UI HELPERS ---
-
-def check_session_state():
-    """
-    Enforces the rule: User MUST select an area on the map first.
-    """
-    # Check if the key exists and is not None
-    if "selected_price_area" not in st.session_state or not st.session_state["selected_price_area"]:
-        st.error("⛔ **Context Missing**")
-        st.warning("Please select a Region on the Map page first.")
-        
-        # Link to the Map Page (Ensure the file exists in pages/)
-        c1, c2 = st.columns([1, 4])
-        with c1:
-            if st.button("Go to Map Selector"):
-                st.switch_page("pages/01_Map_Selector.py")
-        
-        st.stop() # Stop execution here
+# --- 2. SIDEBAR STYLING (THE LABELS) ---
+SIDEBAR_CSS = """
+<style>
+    /* Explorative - Blue */
+    [data-testid="stSidebarNav"] li:has(a[href*="Map_Selector"]) span,
+    [data-testid="stSidebarNav"] li:has(a[href*="Energy_Stats"]) span,
+    [data-testid="stSidebarNav"] li:has(a[href*="Weather_Stats"]) span {
+        background: linear-gradient(90deg, #1e3a5f 0%, #2d5a87 100%);
+        color: white !important;
+        padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
+    }
+    /* Diagnostics - Green */
+    [data-testid="stSidebarNav"] li:has(a[href*="Correlations"]) span,
+    [data-testid="stSidebarNav"] li:has(a[href*="Anomalies"]) span,
+    [data-testid="stSidebarNav"] li:has(a[href*="Signal_Processing"]) span {
+        background: linear-gradient(90deg, #1a472a 0%, #2d6a4f 100%);
+        color: white !important;
+        padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
+    }
+    /* Predictive - Purple */
+    [data-testid="stSidebarNav"] li:has(a[href*="Snow_Drift"]) span,
+    [data-testid="stSidebarNav"] li:has(a[href*="Forecasting"]) span {
+        background: linear-gradient(90deg, #4a1a6b 0%, #6b2d8a 100%);
+        color: white !important;
+        padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
+    }
+</style>
+"""
 
 def render_sidebar():
-    """
-    Renders the Global Context sidebar (Read-Only Info).
-    """
+    """Applies the colored labels and shows global info."""
+    st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
+    
     with st.sidebar:
         st.header("⚡ Energy Atlas")
-        st.caption("v2.0 Professional Edition")
-        st.divider()
+        st.markdown("---")
         
         # Global Context Info
         if "selected_price_area" in st.session_state and st.session_state["selected_price_area"]:
-            st.markdown("### 🌍 Active Context")
             st.success(f"**Region:** {st.session_state['selected_price_area']}")
             
-            coords = st.session_state.get("selected_coords", {"lat": 0, "lon": 0})
-            st.code(f"{coords['lat']:.4f}, {coords['lon']:.4f}", language="json")
+            if "selected_coords" in st.session_state:
+                coords = st.session_state["selected_coords"]
+                st.caption(f"Lat: {coords['lat']:.2f}, Lon: {coords['lon']:.2f}")
             
-            # Bonus: Elevation
             if "elevation" in st.session_state:
                 st.caption(f"⛰️ Elevation: {st.session_state['elevation']}m")
         else:
-            st.warning("⚠️ No Selection")
-            st.caption("Use the Map to select a region.")
+            st.warning("⚠️ No Region Selected")
 
-        st.divider()
-        
-        # Navigation Groups (Visual Guide Only)
-        st.caption("Modules")
-        st.markdown("🟦 **Exploration**")
-        st.markdown("🟧 **Diagnostics**")
+        st.markdown("---")
+        # Visual Headers for the Groups
+        st.caption("Navigation Groups")
+        st.markdown("🟦 **Explorative**")
+        st.markdown("🟩 **Diagnostics**")
         st.markdown("🟪 **Predictive**")
 
 # --- 3. DATA LOADERS ---
@@ -80,7 +86,6 @@ def get_mongo_collection(collection_name=None):
 
 @st.cache_data(ttl=3600)
 def load_map_stats(start_date, end_date, data_type, selected_group):
-    # Determine Collection
     if data_type == "Production":
         coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
         group_col = "production_group"
@@ -121,12 +126,13 @@ def load_yearly_data(data_type, year):
 
     start_date = datetime(year, 1, 1)
     end_date = datetime(year, 12, 31, 23, 59, 59)
+    projection = {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}
     
     try:
-        data = list(coll.find({"start_time": {"$gte": start_date, "$lte": end_date}}, 
-                            {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}).limit(500000))
+        data = list(coll.find({"start_time": {"$gte": start_date, "$lte": end_date}}, projection).limit(500000))
         df = pd.DataFrame(data)
         if not df.empty:
+            # Standardize column names for the app
             df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
             df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
         return df
@@ -146,7 +152,6 @@ def fetch_weather_api(lat, lon, start_date, end_date):
 
 @st.cache_data(ttl=3600*24)
 def fetch_elevation(lat, lon):
-    """Bonus: Fetch elevation data."""
     try:
         r = requests.get(f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}", timeout=5)
         return r.json()["elevation"][0]
@@ -156,11 +161,12 @@ def fetch_elevation(lat, lon):
 def load_geojson():
     try: 
         with open('elspot_areas.geojson', 'r', encoding='utf-8') as f: return json.load(f)
-    except: return None
+    except: 
+        return None
 
 @st.cache_data
 def load_municipality_geojson():
     try: 
-        # utf-8-sig to handle BOM error
         with open('Basisdata_0000_Norge_4258_Kommune_GeoJSON.geojson', 'r', encoding='utf-8-sig') as f: return json.load(f)
-    except: return None
+    except: 
+        return None
