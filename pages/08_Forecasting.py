@@ -88,7 +88,7 @@ with st.container():
     st.info(f"**Forecast Region:** {current_area} (Weather Source: Lat {coords['lat']:.4f}, Lon {coords['lon']:.4f})")
     
     # --- Row 2: Group & Exogenous ---
-    c5, c6 = st.columns([2, 1])
+    c5, c6 = st.columns(2)
 
     # Load Data (Needed to populate groups)
     # Load the years spanned by the training range for robust data filtering
@@ -121,7 +121,7 @@ with st.container():
         exog_vars = st.multiselect(
             "Exogenous Features", 
             utils.WEATHER_VARS, 
-            default=["temperature_2m", "wind_speed_10m"]
+            default=["temperature_2m"]
         )
 
 # --- 4. MODEL HYPERPARAMETERS & EXECUTION ---
