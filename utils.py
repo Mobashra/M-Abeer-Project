@@ -17,23 +17,29 @@ CITIES = {
 WEATHER_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
 
 # --- 2. SIDEBAR STYLING ---
+# Matches the Home.py color theme (Teal / Amber / Indigo)
 SIDEBAR_CSS = """
 <style>
+    /* Explorative - Teal */
     [data-testid="stSidebarNav"] li:has(a[href*="Map_Selector"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Energy_Stats"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Weather_Stats"]) span {
-        background: linear-gradient(90deg, #1e3a5f 0%, #2d5a87 100%);
+        background: linear-gradient(90deg, #0F766E 0%, #115E59 100%);
         color: white !important; padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
     }
+    
+    /* Diagnostic - Amber/Orange */
     [data-testid="stSidebarNav"] li:has(a[href*="Correlations"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Anomalies"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Signal_Processing"]) span {
-        background: linear-gradient(90deg, #1a472a 0%, #2d6a4f 100%);
+        background: linear-gradient(90deg, #D97706 0%, #B45309 100%);
         color: white !important; padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
     }
+    
+    /* Predictive - Indigo */
     [data-testid="stSidebarNav"] li:has(a[href*="Snow_Drift"]) span,
     [data-testid="stSidebarNav"] li:has(a[href*="Forecasting"]) span {
-        background: linear-gradient(90deg, #4a1a6b 0%, #6b2d8a 100%);
+        background: linear-gradient(90deg, #4338CA 0%, #3730A3 100%);
         color: white !important; padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; display: block;
     }
 </style>
@@ -44,13 +50,15 @@ def render_sidebar():
     with st.sidebar:
         st.header("⚡ Energy Atlas")
         st.markdown("---")
+        
+        # Display context if it exists
         if "selected_price_area" in st.session_state:
             st.success(f"**Region:** {st.session_state['selected_price_area']}")
+        
         if "selected_coords" in st.session_state:
             c = st.session_state["selected_coords"]
             st.caption(f"Lat: {c['lat']:.2f}, Lon: {c['lon']:.2f}")
         
-        # Show Elevation in Sidebar too if available
         if "elevation" in st.session_state:
              st.caption(f"⛰️ Elevation: {st.session_state['elevation']}m")
              
@@ -61,10 +69,26 @@ def render_sidebar():
         st.markdown("🟪 **Predictive**")
 
 def check_session_state():
+    """
+    Checks if a region is selected. If not, displays a polite warning
+    and provides a link to the Map Selector.
+    """
     if "selected_price_area" not in st.session_state:
-        st.error("⛔ **No Region Selected**")
-        st.info("Please select a region from the **Map Selector** page first.")
-        if st.button("Go to Map"): st.switch_page("pages/01_Map_Selector.py")
+        # We use a container to make the warning look like a nice card
+        with st.container(border=True):
+            st.markdown("### 📍 Location Context Required")
+            st.warning(
+                "To provide accurate **Energy Statistics**, **Anomalies**, and **Snow Drift Analysis**, "
+                "we need to know which region (Price Area) you are interested in."
+            )
+            st.markdown("Please start by selecting a location on the interactive map.")
+            
+            st.divider()
+            
+            # Direct link to the Map Selector page
+            st.page_link("pages/01_Map_Selector.py", label="Go to Map Selector", icon="🗺️", help="Click to select a region")
+        
+        # Stop execution here so the user doesn't see empty charts/errors below
         st.stop()
 
 # --- 3. DATA LOADERS ---
@@ -128,74 +152,22 @@ def fetch_weather_api(lat, lon, start_date, end_date):
 
 @st.cache_data(ttl=3600*24)
 def fetch_elevation(lat, lon):
-    """
-    Robust elevation lookup system:
-    1. Open-Meteo elevation API
-    2. Open-Meteo reverse geocoding elevation (better fallback)
-    3. Mapbox Terrain-RGB (optional, if token exists)
-    """
-
-    # --- 1) Try Open-Meteo elevation API ---
+    # 1. Open-Meteo elevation API
     try:
-        r = requests.get(
-            f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}",
-            timeout=5
-        )
-        r.raise_for_status()
-        js = r.json()
+        r = requests.get(f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}", timeout=5)
+        r.raise_for_status(); js = r.json()
         elev = js.get("elevation", [None])[0]
-        if elev is not None:
-            return round(elev)
-    except:
-        pass
+        if elev is not None: return round(elev)
+    except: pass
 
-    # --- 2) Try Reverse Geocoding Elevation (More reliable) ---
+    # 2. Reverse Geocoding
     try:
-        r = requests.get(
-            f"https://geocoding-api.open-meteo.com/v1/reverse?latitude={lat}&longitude={lon}",
-            timeout=5
-        )
-        r.raise_for_status()
-        js = r.json()
-        if "elevation" in js and js["elevation"] is not None:
-            return round(js["elevation"])
-    except:
-        pass
-
-    # --- 3) Try Mapbox Terrain-RGB tile query (optional) ---
-    token = st.secrets.get("mapbox", {}).get("token", None)
-    if token:
-        try:
-            # Convert lat/lon to Web Mercator pixel for Terrain-RGB
-            import math
-
-            z = 14
-            lat_rad = math.radians(lat)
-            n = 2.0 ** z
-            x = int((lon + 180.0) / 360.0 * n)
-            y = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
-
-            url = f"https://api.mapbox.com/v4/mapbox.terrain-rgb/{z}/{x}/{y}.pngraw?access_token={token}"
-            img = requests.get(url, timeout=5)
-            img.raise_for_status()
-
-            from PIL import Image
-            import numpy as np
-            from io import BytesIO
-
-            im = Image.open(BytesIO(img.content))
-            pix = np.array(im)[im.size[1]//2, im.size[0]//2]  # center pixel = local elevation point
-            R, G, B = pix[:3]
-
-            elevation = -10000 + (R * 256 * 256 + G * 256 + B) * 0.1
-            return round(elevation)
-
-        except:
-            pass
-
-    # Could not determine elevation
+        r = requests.get(f"https://geocoding-api.open-meteo.com/v1/reverse?latitude={lat}&longitude={lon}", timeout=5)
+        r.raise_for_status(); js = r.json()
+        if "elevation" in js and js["elevation"] is not None: return round(js["elevation"])
+    except: pass
+    
     return None
-
 
 @st.cache_data
 def load_geojson():
