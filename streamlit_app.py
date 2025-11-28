@@ -1,11 +1,9 @@
 import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
-from shapely.geometry import shape, Point
 import utils
 from datetime import date
-import branca.colormap as cm
 
 # ======================================================
 # PAGE CONFIG
@@ -20,15 +18,11 @@ if "selected_price_area" not in st.session_state:
     st.session_state["selected_price_area"] = "NO1"
 if "selected_coords" not in st.session_state:
     st.session_state["selected_coords"] = {"lat": 59.91, "lon": 10.75}
-if "map_zoom" not in st.session_state:
-    st.session_state["map_zoom"] = 5
-if "map_center" not in st.session_state:
-    st.session_state["map_center"] = [65.0, 15.0]
 
 current_area = st.session_state["selected_price_area"]
 
 # ======================================================
-# 2. CONTROLS (5 Columns)
+# 2. CONTROLS (5 Columns Dashboard)
 # ======================================================
 with st.container():
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -63,231 +57,163 @@ with st.container():
             st.session_state["selected_price_area"] = manual_area
             city = utils.CITIES[manual_area]
             st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
-            st.session_state["map_center"] = [city["lat"], city["lon"]]
             st.rerun()
 
 st.divider()
 
 # ======================================================
-# 3. HELPER FUNCTIONS (Geometric & Sanitization)
+# 3. LOAD DATA
 # ======================================================
-@st.cache_data
-def get_geo_data():
-    """Load both GeoJSONs once."""
-    areas = utils.load_geojson()
-    munis = utils.load_municipality_geojson()
-    return areas, munis
+with st.spinner(f"Loading {selected_group} data..."):
+    df = utils.load_map_stats(start_d, end_d, data_type, selected_group)
+    geojson_areas = utils.load_geojson()
+    geojson_munis = utils.load_municipality_geojson()
 
-def sanitize_geojson(geojson_data, id_keys, name_keys):
-    """
-    Standardizes GeoJSON properties to ensure 'safe_id' and 'safe_name' exist.
-    Prevents KeyError in Folium tooltips.
-    """
-    if not geojson_data: return None
-    
-    for feature in geojson_data['features']:
-        props = feature.setdefault('properties', {})
-        
-        # Find ID
-        found_id = "Unknown"
-        for key in id_keys:
-            if key in props:
-                found_id = props[key]
-                break
-        props['safe_id'] = found_id
-        
-        # Find Name
-        found_name = "Unknown"
-        for key in name_keys:
-            if key in props:
-                val = props[key]
-                if isinstance(val, list) and len(val) > 0:
-                    found_name = val[0].get('navn', 'Unknown')
-                elif isinstance(val, str):
-                    found_name = val
-                break
-        props['safe_name'] = found_name
-        
-    return geojson_data
+if not geojson_areas:
+    st.error("Error: 'elspot_areas.geojson' not found.")
+    st.stop()
 
-def get_clicked_area(lat, lon, geojson_data):
-    """Mathematical Hit Testing."""
-    if not geojson_data: return None
-    point = Point(lon, lat)
-    for feature in geojson_data['features']:
-        try:
-            polygon = shape(feature['geometry'])
-            if polygon.contains(point):
-                return feature['properties'].get('safe_id')
-        except:
-            continue
-    return None
+if not df.empty:
+    df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ")
 
 # ======================================================
-# 4. MAP LOGIC
+# 4. MAP VISUALIZATION (Plotly)
 # ======================================================
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
-    # 1. Fetch & Sanitize Data
-    df = utils.load_map_stats(start_d, end_d, data_type, selected_group)
-    raw_areas, raw_munis = get_geo_data()
-    
-    # Sanitize Price Areas (Look for ElSpotOmr variants)
-    geo_areas = sanitize_geojson(raw_areas, ['ElSpotOmr', 'ElSpot_omr', 'name'], ['ElSpotOmr', 'name'])
-    
-    # Sanitize Municipalities (Look for nummer/id variants)
-    geo_munis = sanitize_geojson(raw_munis, ['nummer', 'kommunenummer', 'id'], ['navn', 'kommunenavn'])
-    
-    # 2. Setup Data Dictionary & Color Map
-    data_dict = {}
-    min_val, max_val = 0, 1
-    
+    # Bonus Toggle
+    show_munis = st.toggle("🔍 Show Municipalities (Bonus)", value=False)
+
+    feature_key = "properties.ElSpotOmr"
+
+    # --- LAYER 1: BASE MAP (Price Areas) ---
     if not df.empty:
-        data_dict = df.set_index('price_area')['avg_value'].to_dict()
-        min_val = df['avg_value'].min()
-        max_val = df['avg_value'].max()
+        fig = px.choropleth_mapbox(
+            df,
+            geojson=geojson_areas,
+            locations="price_area_map",
+            featureidkey=feature_key,
+            color="avg_value",
+            color_continuous_scale="Viridis",
+            mapbox_style="carto-positron",
+            zoom=4.2, 
+            center={"lat": 65.0, "lon": 16.0}, 
+            opacity=0.6,
+            labels={"avg_value": "MWh"}
+        )
+    else:
+        fig = px.choropleth_mapbox(
+            geojson=geojson_areas,
+            locations=["NO 1", "NO 2", "NO 3", "NO 4", "NO 5"],
+            featureidkey=feature_key,
+            mapbox_style="carto-positron",
+            zoom=4.2,
+            center={"lat": 65.0, "lon": 16.0},
+            opacity=0.3
+        )
 
-    # Viridis Color Scale
-    colormap = cm.LinearColormap(
-        colors=['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'],
-        vmin=min_val,
-        vmax=max_val,
-        caption=f"Average {selected_group.capitalize()} (MWh)"
-    )
-
-    # 3. Initialize Map
-    m = folium.Map(
-        location=st.session_state["map_center"],
-        zoom_start=st.session_state["map_zoom"],
-        tiles="CartoDB positron",
-        control_scale=True
-    )
-    colormap.add_to(m)
-
-    # 4. Style Function
-    def style_function(feature):
-        area_id = feature['properties'].get('safe_id')
+    # --- LAYER 2: MUNICIPALITIES (Overlay) ---
+    if show_munis and geojson_munis:
+        # Detect correct Key
+        first = geojson_munis['features'][0]['properties']
+        muni_key = None
+        if 'nummer' in first: muni_key = "properties.nummer"
+        elif 'kommunenummer' in first: muni_key = "properties.kommunenummer"
+        elif 'id' in first: muni_key = "properties.id"
         
-        # Color Logic
-        fill_color = "#cccccc"
-        if area_id and area_id in data_dict:
-            fill_color = colormap(data_dict[area_id])
+        if muni_key:
+            # Extract IDs for location mapping
+            key_name = muni_key.split('.')[1]
+            locs = [f['properties'].get(key_name) for f in geojson_munis['features']]
             
-        # Highlight Logic
-        color = "#555555"
-        weight = 1
-        opacity = 0.6
-        
-        if area_id == st.session_state["selected_price_area"]:
-            color = "#ff0000"
-            weight = 3
-            opacity = 0.8
+            fig.add_trace(go.Choroplethmapbox(
+                geojson=geojson_munis,
+                locations=locs,
+                featureidkey=muni_key,
+                z=[1] * len(locs), # Dummy value
+                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], # Transparent fill
+                marker_line_color='rgba(30, 30, 30, 0.8)', # Dark Grey Lines
+                marker_line_width=1.0, 
+                showscale=False,
+                hoverinfo='skip', # Allow clicking through to Price Area
+                name="Municipalities"
+            ))
 
-        return {
-            "fillColor": fill_color,
-            "color": color,
-            "weight": weight,
-            "fillOpacity": opacity,
-        }
+    # --- LAYER 3: HIGHLIGHT SELECTED REGION ---
+    highlight_name = st.session_state["selected_price_area"].replace("NO", "NO ")
+    fig.add_trace(go.Choroplethmapbox(
+        geojson=geojson_areas,
+        locations=[highlight_name],
+        featureidkey=feature_key,
+        z=[1],
+        colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+        marker_line_color="red",
+        marker_line_width=4,
+        showscale=False,
+        hoverinfo="skip",
+        name="Active Region"
+    ))
 
-    # 5. Layers Logic
-    current_zoom = st.session_state["map_zoom"]
-    
-    # --- Price Areas (Base) ---
-    if geo_areas:
-        folium.GeoJson(
-            geo_areas,
-            style_function=style_function,
-            # Point to 'safe_id' which we GUARANTEED exists in sanitize_geojson
-            tooltip=folium.GeoJsonTooltip(fields=['safe_id'], aliases=['Area:']),
-            name="Price Areas"
-        ).add_to(m)
-
-    # --- Municipalities (Zoom > 6) ---
-    if current_zoom > 6 and geo_munis:
-        folium.GeoJson(
-            geo_munis,
-            style_function=lambda x: {
-                "fillColor": "transparent",
-                "color": "#000000",
-                "weight": 0.8,
-                "dashArray": "5, 5",
-            },
-            # Use safe keys
-            tooltip=folium.GeoJsonTooltip(
-                fields=['safe_name', 'safe_id'], 
-                aliases=['Municipality:', 'ID:'],
-                sticky=False
-            ),
-            name="Municipalities"
-        ).add_to(m)
-
-    # 6. Pointer
-    if st.session_state["selected_coords"]:
+    # --- LAYER 4: CLICK POINTER (The Pin) ---
+    if "selected_coords" in st.session_state:
         coords = st.session_state["selected_coords"]
-        folium.Marker(
-            [coords['lat'], coords['lon']],
-            tooltip="Selected Location",
-            icon=folium.Icon(color="red", icon="info-sign"),
-        ).add_to(m)
+        fig.add_trace(go.Scattermapbox(
+            lat=[coords['lat']],
+            lon=[coords['lon']],
+            mode='markers+text',
+            marker=go.scattermapbox.Marker(size=14, color='red', symbol='circle'),
+            text=["📍"], # Visual Pin
+            textposition="top center",
+            hoverinfo='text',
+            hovertext=f"Selected: {st.session_state['selected_price_area']}",
+            name="Pointer"
+        ))
 
-    # 7. Render
-    map_data = st_folium(
-        m,
+    # Layout: Taller and Narrower
+    fig.update_layout(
+        margin=dict(r=0, t=0, l=0, b=0), 
+        clickmode='event+select',
         height=750, 
-        width="100%",
-        returned_objects=["last_clicked", "zoom", "bounds"],
-        key="folium_map"
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
     )
 
-    # 8. Interaction Loop
-    if map_data:
-        # Zoom Update
-        if map_data["zoom"] != st.session_state["map_zoom"]:
-            st.session_state["map_zoom"] = map_data["zoom"]
-            bounds = map_data["bounds"]
-            if bounds:
-                lat = (bounds["_southWest"]["lat"] + bounds["_northEast"]["lat"]) / 2
-                lng = (bounds["_southWest"]["lng"] + bounds["_northEast"]["lng"]) / 2
-                st.session_state["map_center"] = [lat, lng]
-            st.rerun()
+    # --- RENDER MAP ---
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
 
-        # Click Update
-        if map_data["last_clicked"]:
-            lat = map_data["last_clicked"]["lat"]
-            lon = map_data["last_clicked"]["lng"]
+    # --- INTERACTION LOGIC ---
+    if event and "selection" in event and event["selection"]["points"]:
+        point = event["selection"]["points"][0]
+        
+        # 1. Capture Lat/Lon (Always updates Pin)
+        if "lat" in point:
+            st.session_state["selected_coords"] = {"lat": point["lat"], "lon": point["lon"]}
             
-            prev_lat = st.session_state["selected_coords"]["lat"]
-            prev_lon = st.session_state["selected_coords"]["lon"]
-            
-            if abs(lat - prev_lat) > 0.0001 or abs(lon - prev_lon) > 0.0001:
-                st.session_state["selected_coords"] = {"lat": lat, "lon": lon}
-                
-                # Hit Test
-                clicked_area = get_clicked_area(lat, lon, geo_areas)
-                if clicked_area and clicked_area in utils.CITIES:
-                    if clicked_area != st.session_state["selected_price_area"]:
-                        st.session_state["selected_price_area"] = clicked_area
-                
+        # 2. Capture Region (Only if clicking a valid Price Area)
+        if "location" in point:
+            clicked = point["location"].replace(" ", "")
+            if clicked in utils.CITIES and clicked != st.session_state["selected_price_area"]:
+                st.session_state["selected_price_area"] = clicked
+                city = utils.CITIES[clicked]
+                st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
                 st.rerun()
+        else:
+            # If we clicked empty space (or Municipality layer with skip), just show pin
+            st.rerun()
 
 with c_info:
     st.info(f"""
-    **Active Selection**
+    **Selection Details**
     
-    ### {st.session_state['selected_price_area']}
+    🌍 **Region:** {st.session_state['selected_price_area']}
     
-    **Pin Location:**
-    
-    Lat: {st.session_state['selected_coords']['lat']:.4f}
-    
-    Lon: {st.session_state['selected_coords']['lon']:.4f}
+    📍 **Coordinates:**
+    {st.session_state['selected_coords']['lat']:.4f}, {st.session_state['selected_coords']['lon']:.4f}
     """)
     
-    st.markdown("#### 🗺️ Map Guide")
-    st.markdown("""
-    * **Zoom Out:** View colored Price Areas.
-    * **Zoom In (+):** Detailed Municipality borders appear automatically.
-    * **Click:** Drops a **Red Pin** and auto-selects the region.
+    st.markdown("#### 💡 Guide")
+    st.caption("""
+    1. **Filter Data** using the top dashboard.
+    2. **Click Map** to select a specific location (Red Pin).
+    3. **Toggle Municipalities** to see local borders.
     """)
