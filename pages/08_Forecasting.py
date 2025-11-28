@@ -11,23 +11,18 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 # ======================================================
 st.set_page_config(page_title="Forecasting", layout="wide")
 
-# 1. STYLING
+# 1. SAFETY & STYLING
+utils.check_session_state()
 utils.render_sidebar()
 
 st.title("SARIMAX Energy Forecasting")
 st.markdown("Forecast future energy patterns using **SARIMAX** with dynamic **Weather Exogenous Variables**.")
 
-# 2. STATE MANAGEMENT & LOCAL FALLBACK
-# If no global area is selected, initialize with NO1 default
-if "selected_price_area" not in st.session_state or not st.session_state["selected_price_area"]:
-    st.session_state["selected_price_area"] = "NO1"
-    default = utils.CITIES["NO1"]
-    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
+# --- ACTIVE AREA CONTEXT ---
+# Logic: Get Global State -> Default to it -> Allow Local Override
+global_area = st.session_state.get("selected_price_area", "NO1")
 
-current_area = st.session_state["selected_price_area"]
-coords = st.session_state["selected_coords"]
-
-# 3. CONTROLS (Dashboard)
+# 2. CONTROLS (Dashboard)
 with st.container():
     # Row 1: Core Selection
     c1, c2, c3, c4 = st.columns(4)
@@ -38,16 +33,15 @@ with st.container():
 
         # Local Area Selector (Fallback)
         area_list = sorted(utils.CITIES.keys())
-        current_idx = area_list.index(current_area) if current_area in area_list else 0
-        selected_area = st.selectbox("Region", area_list, index=current_idx)
         
-        # Update global state if changed locally
-        if selected_area != current_area:
-            st.session_state["selected_price_area"] = selected_area
-            city = utils.CITIES[selected_area]
-            st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
-            st.rerun()
-            current_area = selected_area # Update current_area for immediate use
+        # Determine default index based on GLOBAL selection
+        try:
+            default_idx = area_list.index(global_area)
+        except ValueError:
+            default_idx = 0
+            
+        # LOCAL SELECTOR (Does not update Global Session State)
+        selected_area = st.selectbox("Region", area_list, index=default_idx)
 
     with c2:
         st.markdown("###### Training Start Time")
@@ -84,8 +78,13 @@ with st.container():
     with c4:
         st.markdown("###### Forecast Horizon (Hours)")
         horizon = st.number_input("Horizon", min_value=1, max_value=168, value=48, label_visibility="collapsed")
-        
-    st.info(f"**Forecast Region:** {current_area} (Weather Source: Lat {coords['lat']:.4f}, Lon {coords['lon']:.4f})")
+    
+    # CRITICAL: Derive Coordinates from LOCAL selection for Weather Data
+    city_data = utils.CITIES[selected_area]
+    local_lat = city_data["lat"]
+    local_lon = city_data["lon"]
+    
+    st.info(f"**Forecast Region:** {selected_area} (Weather Source: Lat {local_lat:.4f}, Lon {local_lon:.4f})")
     
     # --- Row 2: Group & Exogenous ---
     c5, c6 = st.columns(2)
@@ -109,8 +108,8 @@ with st.container():
         st.error("No energy data found.")
         st.stop()
         
-    # Filter by Area & Groups
-    df_energy = df_energy[df_energy['price_area'] == current_area]
+    # Filter by Area (LOCAL VARIABLE) & Groups
+    df_energy = df_energy[df_energy['price_area'] == selected_area]
     groups = sorted(df_energy['group'].unique())
     
     with c5:
@@ -159,8 +158,9 @@ if st.button("Train & Forecast", type="primary", use_container_width=True):
     fetch_end = train_end_date + timedelta(hours=horizon + 24) # Buffer for forecast period
     
     with st.spinner("Fetching & aligning weather data..."):
+        # USE LOCAL COORDS (selected_area) instead of Global Pin
         df_w = utils.fetch_weather_api(
-            coords['lat'], coords['lon'], 
+            local_lat, local_lon, 
             fetch_start.strftime("%Y-%m-%d"), 
             fetch_end.strftime("%Y-%m-%d")
         )
