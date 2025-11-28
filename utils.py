@@ -5,166 +5,148 @@ import json
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 
-
 # --- 1. CONSTANTS ---
+# Standard coordinates for Price Area centers (Fallback)
 CITIES = {
-   "NO1": {"city": "Oslo", "lat": 59.9139, "lon": 10.7522},
-   "NO2": {"city": "Kristiansand", "lat": 58.1467, "lon": 7.9956},
-   "NO3": {"city": "Trondheim", "lat": 63.4305, "lon": 10.3951},
-   "NO4": {"city": "Tromsø", "lat": 69.6492, "lon": 18.9553},
-   "NO5": {"city": "Bergen", "lat": 60.3942, "lon": 5.3221},
+    "NO1": {"city": "Oslo", "lat": 59.9139, "lon": 10.7522},
+    "NO2": {"city": "Kristiansand", "lat": 58.1467, "lon": 7.9956},
+    "NO3": {"city": "Trondheim", "lat": 63.4305, "lon": 10.3951},
+    "NO4": {"city": "Tromsø", "lat": 69.6492, "lon": 18.9553},
+    "NO5": {"city": "Bergen", "lat": 60.3942, "lon": 5.3221},
 }
 
-
 WEATHER_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"]
-
 
 # --- 2. DATABASE CONNECTION ---
 @st.cache_resource
 def get_mongo_collection(collection_name=None):
-   try:
-       client = MongoClient(st.secrets["mongo"]["uri"])
-       db = client[st.secrets["mongo"]["database"]]
-       if collection_name:
-           return db[collection_name]
-       else:
-           return db[st.secrets["mongo"]["collection"]]
-   except Exception as e:
-       st.error(f"MongoDB Connection Error: {e}")
-       return None
+    try:
+        # Check if secrets exist
+        if "mongo" not in st.secrets:
+            return None
+        
+        client = MongoClient(st.secrets["mongo"]["uri"])
+        db = client[st.secrets["mongo"]["database"]]
+        if collection_name:
+            return db[collection_name]
+        else:
+            return db[st.secrets["mongo"]["collection"]]
+    except Exception as e:
+        print(f"MongoDB Connection Error: {e}") # Log to console
+        return None
 
+# --- 3. DATA LOADERS ---
 
-# --- 3. LOADERS ---
+@st.cache_data(ttl=3600)
+def load_map_stats(year, days_range, data_type, selected_group):
+    """
+    Aggregates average Energy values per Price Area for the Map Choropleth.
+    Requirement: Color areas based on mean values over time interval.
+    """
+    # Determine Collection
+    if data_type == "Production":
+        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        group_col = "production_group"
+    else:
+        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        group_col = "consumption_group"
 
+    coll = get_mongo_collection(coll_name)
+    if coll is None: return pd.DataFrame()
+
+    # Time Filter
+    # We take the whole year as baseline, or a specific range if needed
+    start_date = datetime(year, 1, 1)
+    end_date = start_date + timedelta(days=days_range)
+
+    # Aggregation Pipeline
+    pipeline = [
+        {
+            "$match": {
+                "start_time": {"$gte": start_date, "$lte": end_date},
+                group_col: selected_group
+            }
+        },
+        {
+            "$group": {
+                "_id": "$price_area", # Group by NO1, NO2...
+                "avg_value": {"$avg": "$value"} # Calculate Mean
+            }
+        }
+    ]
+
+    try:
+        data = list(coll.aggregate(pipeline))
+        df = pd.DataFrame(data)
+        if df.empty: return df
+
+        df.rename(columns={'_id': 'price_area'}, inplace=True)
+        return df
+    except Exception as e:
+        return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def load_yearly_data(data_type, year):
-   """
-   Fetches raw data for ONE year. Used by Page 2 (Elhub Data) and Page 3 (STL).
-   """
-   # 1. Select Collection
-   if data_type == "Production":
-       coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
-       group_col = "production_group"
-   else:
-       coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
-       group_col = "consumption_group"
+    """Fetches raw hourly data for charts."""
+    if data_type == "Production":
+        coll_name = st.secrets["mongo"].get("collection", "production_mba_hour")
+        group_col = "production_group"
+    else:
+        coll_name = st.secrets["mongo"].get("collection_cons", "consumption_mba_hour")
+        group_col = "consumption_group"
 
+    coll = get_mongo_collection(coll_name)
+    if coll is None: return pd.DataFrame()
 
-   coll = get_mongo_collection(coll_name)
-   if coll is None: return pd.DataFrame()
+    start_date = datetime(year, 1, 1)
+    end_date = datetime(year, 12, 31, 23, 59, 59)
+    
+    # Optimization: Only fetch needed fields
+    projection = {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}
+    
+    query = {"start_time": {"$gte": start_date, "$lte": end_date}}
+    
+    # Limit to prevent memory crash (adjust limit based on your data size)
+    data = list(coll.find(query, projection).limit(500000)) 
+    df = pd.DataFrame(data)
 
+    if not df.empty:
+        df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
+        # Fix Timezone: UTC -> Oslo
+        df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
 
-   # 2. Date Filter
-   start_date = datetime(year, 1, 1)
-   end_date = datetime(year, 12, 31, 23, 59, 59)
-  
-   query = {"start_time": {"$gte": start_date, "$lte": end_date}}
-  
-   # 3. Fetch (Limit 300k to prevent crashes)
-   projection = {"price_area": 1, group_col: 1, "start_time": 1, "value": 1, "_id": 0}
-   data = list(coll.find(query, projection).limit(300000))
-   df = pd.DataFrame(data)
-  
-   if df.empty: return df
+    return df
 
-
-   # 4. Cleanup
-   df.rename(columns={group_col: 'group', 'start_time': 'date', 'value': 'mwh'}, inplace=True)
-   df['group'] = df['group'].astype(str).fillna("Unknown")
-  
-   # --- FIX FOR TIMEZONE ERROR ---
-   # We force the data to be UTC-aware first, THEN convert to Oslo
-   df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
-  
-   return df
-
-
-# Alias for backward compatibility
+# Alias for compatibility with old files
 get_year_data = load_yearly_data
 
+# --- 4. API & GEOJSON ---
 
-@st.cache_data(ttl=3600)
-def load_map_data(target_year, days_to_agg, data_type, selected_group):
-   """
-   Server-side aggregation for the Home Page Map.
-   """
-   if data_type == "Production":
-       coll = get_mongo_collection(st.secrets["mongo"]["collection"])
-       group_col = "production_group"
-   else:
-       coll = get_mongo_collection(st.secrets["mongo"]["collection_cons"])
-       group_col = "consumption_group"
-
-
-   end_date = datetime(target_year, 12, 31, 23, 59)
-   start_date = end_date - timedelta(days=days_to_agg)
-
-
-   pipeline = [
-       {"$match": {
-           group_col: {"$regex": f"^{selected_group}$", "$options": "i"},
-           "start_time": {"$gte": start_date, "$lte": end_date}
-       }},
-       {"$group": {
-           "_id": "$price_area",
-           "val": {"$avg": "$value"}
-       }}
-   ]
-  
-   data = list(coll.aggregate(pipeline))
-   df = pd.DataFrame(data)
-   if df.empty: return df
-  
-   df.rename(columns={'_id': 'price_area'}, inplace=True)
-   df['price_area_map'] = df['price_area'].astype(str).str.replace("NO", "NO ")
-   return df
-
-
-# --- 4. LEGACY LOADER ---
-@st.cache_data(ttl=600)
-def load_elhub_data(year_filter=None):
-   """Legacy loader needed for some older page logic."""
-   coll = get_mongo_collection()
-   if coll is None: return pd.DataFrame()
-  
-   query = {}
-   if year_filter:
-       s = datetime(year_filter, 1, 1)
-       e = datetime(year_filter, 12, 31, 23, 59)
-       query = {"start_time": {"$gte": s, "$lte": e}}
-
-
-   data = list(coll.find(query, {"_id": 0}))
-   df = pd.DataFrame(data)
-  
-   if not df.empty:
-       df.rename(columns={"start_time": "date", "value": "mwh", "production_group": "group"}, inplace=True)
-       if 'date' in df.columns:
-           # FIX: Force UTC-aware before conversion
-           df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_convert("Europe/Oslo")
-          
-   return df
-
-
-# --- 5. API & GEOJSON ---
 @st.cache_data(ttl=3600)
 def fetch_weather_api(lat, lon, start_date, end_date):
-   hourly_vars = ",".join(WEATHER_VARS)
-   url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&hourly={hourly_vars}&timezone=Europe/Oslo"
-   try:
-       resp = requests.get(url, timeout=60); resp.raise_for_status(); js = resp.json()
-       if "hourly" not in js: return pd.DataFrame()
-       df = pd.DataFrame(js["hourly"])
-      
-       # API data usually comes as simple strings, so we convert safely
-       df["time"] = pd.to_datetime(df["time"])
-       return df
-   except: return pd.DataFrame()
-
+    """Fetch Open-Meteo Data."""
+    hourly_vars = ",".join(WEATHER_VARS)
+    url = f"https://archive-api.open-meteo.com/v1/era5?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&hourly={hourly_vars}&timezone=Europe/Oslo"
+    
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        js = resp.json()
+        
+        if "hourly" not in js: return pd.DataFrame()
+        
+        df = pd.DataFrame(js["hourly"])
+        df["time"] = pd.to_datetime(df["time"]) # Already local time due to timezone param
+        return df
+    except Exception as e:
+        return pd.DataFrame()
 
 @st.cache_data
 def load_geojson():
-   try:
-       with open('elspot_areas.geojson', 'r') as f: return json.load(f)
-   except: return None
+    """Loads the Price Area polygons."""
+    # Ensure you have 'elspot_areas.geojson' in your root folder!
+    try:
+        with open('elspot_areas.geojson', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
