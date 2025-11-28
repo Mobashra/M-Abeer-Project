@@ -30,6 +30,9 @@ st.markdown("""
     /* --- HIGHLIGHT COLORS (Brighter for Dark Mode) --- */
     .highlight-teal { color: #2DD4BF; font-weight: 800; }   /* Bright Teal */
     .highlight-indigo { color: #818CF8; font-weight: 800; } /* Bright Indigo */
+    .highlight-orange { color: #FB923C; font-weight: 800; } /* Bright Orange */
+
+            
 
     /* --- THEME HEADERS --- */
     .theme-exp { color: #2DD4BF; font-weight: 800; font-size: 1.4rem; margin-bottom: 0px; }
