@@ -84,7 +84,8 @@ with col_diag:
         st.divider()
         
         st.page_link("pages/04_Correlations.py", label="Correlation Analysis", icon="🔗", help="Wind vs Production, Temp vs Consumption")
-        st.page_link("pages/05_Weather_Anomalies.py", label="Anomaly Detection", icon="⚠️", help="Detect Outliers in Weather Data")
+        st.page_link("pages/05_Anomalies.py", label="Anomaly Detection", icon="⚠️", help="Detect Outliers in Weather Data")
+        st.page_link("pages/06_Signal_Processing.py", label="Signal Processing", icon="⚠️", help="Detect Outliers in Weather Data")
 
 # --- 3. PREDICTIVE (PURPLE) ---
 with col_pred:
@@ -96,11 +97,6 @@ with col_pred:
         st.divider()
         
         # Adjust these filenames to match your actual file names
-        st.page_link("pages/06_Snow_Drift.py", label="Snow Drift Risk", icon="❄️", help="Road availability modeling")
-        st.page_link("pages/07_Forecasting.py", label="Load Forecasting", icon="📈", help="Predict future consumption")
+        st.page_link("pages/07_Snow_Drift.py", label="Snow Drift Risk", icon="❄️", help="Road availability modeling")
+        st.page_link("pages/08_Forecasting.py", label="Load Forecasting", icon="📈", help="Predict future consumption")
 
-# ======================================================
-# FOOTER / ACADEMIC CONTEXT
-# ======================================================
-st.divider()
-st.caption("Developed for Data Science Engineering Project • Fall 2024")
