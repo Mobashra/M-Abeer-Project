@@ -89,8 +89,8 @@ with col_left:
             legend=dict(orientation="h", y=-0.1)
         )
         
-        # FIX: use_container_width=False ensures it respects the 400px width
-        st.plotly_chart(fig_pie, use_container_width=False)
+       
+        st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.warning("No data for this area.")
 
