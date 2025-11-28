@@ -186,7 +186,7 @@ with c_map:
             hit_id = get_clicked_area_id(point["lat"], point["lon"], geojson_areas)
             if hit_id:
                 # Normalize "NO 1" -> "NO1"
-                clean_id = hit_id.replace(" ", "")
+                clean_id = hit_id.replace("NO", "NO ")
                 if clean_id in utils.CITIES and clean_id != st.session_state["selected_price_area"]:
                     st.session_state["selected_price_area"] = clean_id
             
@@ -195,7 +195,7 @@ with c_map:
         # 2. HANDLE REGION UPDATE (Polygon Click)
         # Triggered if clicking the background map (missing a grid point)
         elif "location" in point:
-            clicked = point["location"].replace(" ", "")
+            clicked = point["location"].replace("NO", "NO ")
             if clicked in utils.CITIES and clicked != st.session_state["selected_price_area"]:
                 st.session_state["selected_price_area"] = clicked
                 # Do NOT update coords here, preserve the old pin
