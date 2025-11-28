@@ -127,6 +127,7 @@ with st.container(border=True):
 
 # Plot 1: Correlation Dynamics
 st.subheader("Correlation Dynamics")
+st.markdown(f"Sliding window correlation (window={window_size} hrs) with lag of {lag} hours.")
 fig_corr = go.Figure()
 fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, mode='lines', name='Correlation', line=dict(color='#636EFA', width=2)))
 fig_corr.add_hline(y=0, line_dash="dash", line_color="gray")
@@ -140,6 +141,7 @@ st.plotly_chart(fig_corr, use_container_width=True)
 
 # Plot 2: Dual Axis Comparison
 st.subheader("Visual Comparison")
+st.markdown("Weather Varibale vs {data_type} Group over Time")
 fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
 
 fig_dual.add_trace(
