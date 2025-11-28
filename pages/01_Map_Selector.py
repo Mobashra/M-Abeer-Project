@@ -123,9 +123,7 @@ df_clicks = pd.DataFrame(clickable_points)
 # ======================================================
 # 4. MAP VISUALIZATION
 # ======================================================
-# ======================================================
-# 4. MAP VISUALIZATION
-# ======================================================
+
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
@@ -224,7 +222,19 @@ with c_map:
         showlegend=False
     ))
 
-    fig.update_layout(margin=dict(r=0, t=0, l=0, b=0), clickmode='event+select', height=800)
+    fig.update_layout(
+        margin=dict(r=0, t=0, l=0, b=0), 
+        clickmode='event+select', 
+        height=800,
+        # MOVE LEGEND TO TOP-LEFT
+        legend=dict(
+            yanchor="top",
+            y=0.98,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255,255,255,0.7)" # Semi-transparent background
+        )
+    )
     
     # RENDER MAP
     event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
