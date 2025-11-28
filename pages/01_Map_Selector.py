@@ -13,7 +13,8 @@ from shapely.geometry import shape, Point
 st.set_page_config(page_title="Map Selector", layout="wide")
 utils.render_sidebar()
 
-st.title("🇳🇴 Regional Energy Overview")
+st.title("Map and Price Area Selector")
+st.markdown("Click on the map to select a location and its Price Area")
 
 # ======================================================
 # 1. INIT STATE
@@ -31,7 +32,7 @@ current_area = st.session_state["selected_price_area"]
 with st.container():
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        st.markdown("###### Source")
+        st.markdown("###### Energy Group")
         data_type = st.radio("Source", ["Production", "Consumption"], horizontal=True, label_visibility="collapsed")
     with c2:
         st.markdown("###### Start Date")
@@ -125,17 +126,46 @@ with c_map:
         )
 
     # --- LAYER 2: MUNICIPALITIES ---
+# --- LAYER 2: MUNICIPALITIES ---
     if show_munis and geojson_munis:
         first = geojson_munis['features'][0]['properties']
         muni_key = "properties.nummer" if 'nummer' in first else ("properties.kommunenummer" if 'kommunenummer' in first else "properties.id")
+        
         if muni_key:
             prop = muni_key.split('.')[1]
-            locs = [f['properties'].get(prop) for f in geojson_munis['features']]
+            
+            # Prepare data: Extract IDs and Names in the exact same order
+            locs = []
+            muni_names = []
+            
+            for f in geojson_munis['features']:
+                # 1. Get ID
+                locs.append(f['properties'].get(prop))
+                
+                # 2. Get Name (Using logic from your Click Grid)
+                props = f['properties']
+                name = "Unknown"
+                if 'navn' in props:
+                    if isinstance(props['navn'], list) and len(props['navn']) > 0: 
+                        name = props['navn'][0].get('navn')
+                    elif isinstance(props['navn'], str): 
+                        name = props['navn']
+                muni_names.append(name)
+
             fig.add_trace(go.Choroplethmapbox(
-                geojson=geojson_munis, locations=locs, featureidkey=muni_key, z=[1]*len(locs),
-                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
-                marker_line_color='rgba(20, 20, 20, 0.8)', marker_line_width=0.8,
-                showscale=False, hoverinfo='skip', name="Municipalities"
+                geojson=geojson_munis, 
+                locations=locs, 
+                featureidkey=muni_key, 
+                z=[1]*len(locs),
+                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], # Transparent fill
+                marker_line_color='rgba(20, 20, 20, 0.8)', 
+                marker_line_width=0.8,
+                showscale=False, 
+                
+                # --- KEY CHANGES HERE ---
+                text=muni_names,       # Pass the list of names
+                hoverinfo='text',      # Enable text hover (was 'skip')
+                name="Municipalities"
             ))
 
     # --- LAYER 3: CLICK GRID (Invisible) ---
@@ -200,14 +230,14 @@ with c_map:
                 st.rerun()
 
 with c_info:
-    st.markdown("#### 📌 Selection Status")
+    st.markdown("#### Selection Status")
     with st.container(border=True):
         # 1. REGION INFO (Blue)
         curr = st.session_state["selected_price_area"]
         center = utils.CITIES[curr]
         st.info(f"**Active Region**\n# {curr}")
         st.caption("**Region Center:**")
-        st.write(f"Lat: {center['lat']:.4f}\n\nLon: {center['lon']:.4f}")
+        st.write(f"Latitude: {center['lat']:.4f}\n\nLongitude: {center['lon']:.4f}")
         
     
         
@@ -216,7 +246,8 @@ with c_info:
         # 2. PIN INFO (Red)
         if "selected_coords" in st.session_state:
             pin = st.session_state["selected_coords"]
-            st.error(f"**📍 Pin Location**\n\nLat: {pin['lat']:.4f}\nLon: {pin['lon']:.4f}")
+            st.error("**📍 Pin Location**")
+            st.write(f"Lat: {pin['lat']:.4f}\nLon: {pin['lon']:.4f}")
         
         # 3. ELEVATION (Orange - Custom Style)
         if "elevation" in st.session_state:
