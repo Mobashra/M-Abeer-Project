@@ -228,3 +228,30 @@ with c_map:
                 if elev is not None: st.session_state["elevation"] = elev
 
                 st.rerun()
+
+with c_info:
+    st.markdown("#### Selection Status")
+    with st.container(border=True):
+        # 1. REGION INFO (Blue)
+        curr = st.session_state["selected_price_area"]
+        center = utils.CITIES[curr]
+        st.info(f"**Active Region**\n# {curr}")
+        st.caption("**Region Center:**")
+        st.write(f"Latitude: {center['lat']:.4f}\n\nLongitude: {center['lon']:.4f}")
+        
+    
+        
+        st.divider()
+        
+        # 2. PIN INFO (Red)
+        if "selected_coords" in st.session_state:
+            pin = st.session_state["selected_coords"]
+            st.error("**📍 Pin Location**")
+            st.write(f"Lat: {pin['lat']:.4f}\nLon: {pin['lon']:.4f}")
+        
+        # 3. ELEVATION (Orange - Custom Style)
+        if "elevation" in st.session_state:
+            elev = st.session_state["elevation"]
+            st.warning(f"**⛰️ Elevation**\n\n{elev:.1f} meters above sea level")
+        else:
+            st.caption("Click map to fetch elevation.")
