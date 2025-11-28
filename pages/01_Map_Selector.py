@@ -82,7 +82,7 @@ with st.container():
             }
             st.rerun()
 
-# Validate range
+# Validate date range
 if start_d > end_d:
     st.error("Start Date must be before End Date.")
     st.stop()
@@ -148,11 +148,10 @@ c_map, c_info = st.columns([3, 1])
 
 with c_map:
     show_munis = st.toggle("🔍 Show Municipalities", value=False)
-
     feature_key = "properties.ElSpotOmr"
 
     # ------------------------------
-    # LAYER 1 — Price Area Map
+    # LAYER 1 — Price Area Map (colored)
     # ------------------------------
     if not df.empty:
         fig = px.choropleth_mapbox(
@@ -177,7 +176,7 @@ with c_map:
             center={"lat": 65, "lon": 16},
         )
 
-    # Price area hover fix — SHOW REGION NAME
+    # Hover shows region name + value
     fig.update_traces(
         hovertemplate="<b>%{location}</b><br>MWh: %{z:.2f}<extra></extra>"
     )
@@ -212,7 +211,7 @@ with c_map:
         ))
 
     # ------------------------------
-    # LAYER 3 — Clickable Centroids
+    # LAYER 3 — Clickable Centroids (transparent)
     # ------------------------------
     if not df_clicks.empty:
         fig.add_trace(go.Scattermapbox(
@@ -228,7 +227,6 @@ with c_map:
     # LAYER 4 — Highlight Selected Price Area
     # ------------------------------
     highlight = st.session_state["selected_price_area"].replace("NO", "NO ")
-
     fig.add_trace(go.Choroplethmapbox(
         geojson=geojson_areas,
         locations=[highlight],
@@ -260,7 +258,9 @@ with c_map:
         height=820,
     )
 
+    # ------------------------------
     # EVENT HANDLER
+    # ------------------------------
     event = st.plotly_chart(
         fig, use_container_width=True,
         on_select="rerun", selection_mode="points"
@@ -273,10 +273,14 @@ with c_map:
         if "lat" in p:
             st.session_state["selected_coords"] = {"lat": p["lat"], "lon": p["lon"]}
 
-            elevation = utils.fetch_elevation(p["lat"], p["lon"])
-            if elevation:
-                st.session_state["elevation"] = elevation
+            # Fetch elevation robustly
+            elev = utils.fetch_elevation(p["lat"], p["lon"])
+            if elev is not None:
+                st.session_state["elevation"] = elev
+            else:
+                st.session_state["elevation"] = "N/A"
 
+            # Update selected price area
             hit = get_clicked_area_id(p["lat"], p["lon"], geojson_areas)
             if hit:
                 clean = hit.replace(" ", "")
@@ -285,7 +289,7 @@ with c_map:
 
             st.rerun()
 
-        # Direct polygon click
+        # Polygon click fallback
         elif "location" in p:
             clicked = p["location"].replace(" ", "")
             if clicked in utils.CITIES:
@@ -301,7 +305,6 @@ with c_info:
     # ACTIVE REGION
     region = st.session_state["selected_price_area"]
     center = utils.CITIES[region]
-
     st.info(f"### {region}")
     st.caption(f"Center: {center['lat']:.2f}, {center['lon']:.2f}")
 
@@ -316,7 +319,6 @@ with c_info:
     st.divider()
 
     # ELEVATION
-    if "elevation" in st.session_state:
-        st.metric("⛰️ Elevation", f"{st.session_state['elevation']} m")
-    else:
-        st.caption("Click map to fetch elevation.")
+    st.markdown("### ⛰️ Elevation")
+    elev = st.session_state.get("elevation", "Click map")
+    st.metric("", f"{elev if elev != 'N/A' else 'Not Available'}")
