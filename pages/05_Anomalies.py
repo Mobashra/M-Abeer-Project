@@ -1,216 +1,182 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
-from scipy.fft import dct, idct
-from sklearn.neighbors import LocalOutlierFactor
+from plotly.subplots import make_subplots
+import pandas as pd
 import utils
 
-# ======================================================
-# PAGE CONFIG & SETUP
-# ======================================================
-st.set_page_config(page_title="Weather Anomalies", layout="wide")
-utils.render_sidebar()
-utils.check_session_state()
+st.set_page_config(page_title="Correlation Analysis", layout="wide")
 
-# Header
-st.title("Weather Anomalies Detection")
-st.header("Temperature Outliers and Precipitation Anomalies")
-st.markdown("Detect unusual weather patterns using advanced statistical methods.")
+# 1. STYLING
+utils.render_sidebar()
+
+st.title("Sliding Window Correlation")
+st.markdown("Analyze how **Weather** drivers impact **Energy** patterns over time.")
 
 # --- ACTIVE AREA CONTEXT ---
 current_context_area = st.session_state.get("selected_price_area", "NO1")
 st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
-st.markdown("---")
+# 2. STATE & DEFAULTS
+if "selected_price_area" not in st.session_state:
+    st.session_state["selected_price_area"] = "NO1"
+    default = utils.CITIES["NO1"]
+    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
 
-# ======================================================
-# DATA LOADING
-# ======================================================
-# Ensure coords exist, default to NO1 if not
-if "selected_coords" not in st.session_state:
-    city = utils.CITIES.get(current_context_area, utils.CITIES["NO1"])
-    st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+# 3. GLOBAL CONTROLS
+with st.container():
+    c1, c2, c3, c4 = st.columns(4)
+    
+    # Column 1: Region Selection
+    with c1:
+        area_list = sorted(utils.CITIES.keys())
+        try:
+            current_idx = area_list.index(st.session_state["selected_price_area"])
+        except ValueError:
+            current_idx = 0 
+        
+        # Added key to prevent duplicate ID errors
+        selected_area = st.selectbox("Region", area_list, index=current_idx, key="corr_region_selector")
+        
+        if selected_area != st.session_state["selected_price_area"]:
+            st.session_state["selected_price_area"] = selected_area
+            city = utils.CITIES[selected_area]
+            st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+            st.rerun()
 
-coords = st.session_state["selected_coords"]
+    # Column 2: Year Selection
+    with c2:
+        selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
 
-# Year Selector
-c_year, _ = st.columns([1, 3])
-with c_year:
-    year = st.selectbox("Select Analysis Year", [2021, 2022, 2023, 2024], index=0)
+    # Column 3: Energy Type (Moved here for better layout)
+    with c3:
+        data_type = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
 
-@st.cache_data(ttl=3600)
-def get_data(lat, lon, y):
-    return utils.fetch_weather_api(lat, lon, f"{y}-01-01", f"{y}-12-31")
+    # Column 4: Weather Variable
+    with c4:
+        selected_weather = st.selectbox("Weather Variable", utils.WEATHER_VARS, index=2) # Default Wind Speed
 
-with st.spinner("Loading weather data..."):
-    df = get_data(coords['lat'], coords['lon'], year)
+st.divider()
 
-if df.empty:
-    st.error("No data available.")
+# 4. LOAD ENERGY DATA
+with st.spinner(f"Loading {data_type} data for {selected_year}..."):
+    df_energy = utils.load_yearly_data(data_type, selected_year)
+
+if df_energy.empty:
+    st.error(f"No energy data found for {selected_year}.")
     st.stop()
 
-st.success(f"Weather data loaded: {len(df)} records")
+# Filter by Selected Area
+df_energy_area = df_energy[df_energy['price_area'] == selected_area]
+available_groups = sorted(df_energy_area['group'].unique())
 
-# ======================================================
-# LOGIC FUNCTIONS
-# ======================================================
-def detect_temperature_outliers(df, freq_cutoff=0.05, n_std=3):
-    # 1. Prepare Data
-    temp = df['temperature_2m'].ffill().bfill().values
-    time = pd.to_datetime(df['time'])
-    
-    # 2. DCT
-    temp_dct = dct(temp, type=2, norm='ortho')
-    
-    # 3. Filter for SATV (High Pass)
-    cutoff_index = int(len(temp_dct) * freq_cutoff)
-    temp_dct_filtered = temp_dct.copy()
-    temp_dct_filtered[:cutoff_index] = 0
-    satv = idct(temp_dct_filtered, type=2, norm='ortho')
-    
-    # 4. Filter for Trend (Low Pass)
-    temp_dct_trend = np.zeros_like(temp_dct)
-    temp_dct_trend[:cutoff_index] = temp_dct[:cutoff_index]
-    trend = idct(temp_dct_trend, type=2, norm='ortho')
-    
-    # 5. Robust Statistics
-    median_satv = np.median(satv)
-    mad_satv = np.median(np.abs(satv - median_satv))
-    std_satv = mad_satv * 1.4826
-    
-    # 6. Boundaries (Dynamic)
-    upper_boundary = median_satv + n_std * std_satv
-    lower_boundary = median_satv - n_std * std_satv
-    
-    upper_dynamic = trend + upper_boundary
-    lower_dynamic = trend + lower_boundary
-    
-    # 7. Outliers
-    outliers_mask = (satv > upper_boundary) | (satv < lower_boundary)
-    n_outliers = np.sum(outliers_mask)
-    outlier_percentage = (n_outliers / len(temp)) * 100
-    
-    # 8. Plot
-    fig = go.Figure()
-    
-    # Normal
-    fig.add_trace(go.Scatter(
-        x=time[~outliers_mask], y=temp[~outliers_mask],
-        mode='lines', name='Normal Temperature',
-        line=dict(color='green', width=1), opacity=0.7
-    ))
-    
-    # Outliers
-    fig.add_trace(go.Scatter(
-        x=time[outliers_mask], y=temp[outliers_mask],
-        mode='markers', name=f'Outliers (n={n_outliers})',
-        marker=dict(color='red', size=6, symbol='circle')
-    ))
-    
-    # Limits
-    fig.add_trace(go.Scatter(x=time, y=upper_dynamic, mode='lines', name='Upper Limit', line=dict(color='gray', width=1, dash='dash')))
-    fig.add_trace(go.Scatter(x=time, y=lower_dynamic, mode='lines', name='Lower Limit', line=dict(color='gray', width=1, dash='dash'), fill='tonexty'))
-    
-    fig.update_layout(
-        title=f'Temperature Outliers (DCT + SPC) - Cutoff: {freq_cutoff}, ±{n_std}σ',
-        xaxis_title='Time', yaxis_title='Temperature (°C)',
-        template='plotly_white', height=500
-    )
-    
-    return fig, n_outliers, outlier_percentage, time[outliers_mask], temp[outliers_mask]
+# 5. ANALYSIS CONFIGURATION
+st.subheader("Analysis Configuration")
+col_grp, col_win, col_lag = st.columns([1, 1, 1])
 
-def detect_precipitation_anomalies(df, outlier_prop=0.01, n_neighbors=50):
-    precip = df['precipitation'].values
-    time = pd.to_datetime(df['time'])
-    
-    precip_diff = np.diff(precip, prepend=precip[0])
-    X = np.column_stack([precip, precip_diff])
-    
-    # Jitter
-    rng = np.random.RandomState(42)
-    X_jittered = X + rng.normal(0, 1e-6, X.shape)
-    
-    lof = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=outlier_prop)
-    pred = lof.fit_predict(X_jittered)
-    
-    mask = pred == -1
-    n_anom = np.sum(mask)
-    pct = (n_anom / len(precip)) * 100
-    
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=time[~mask], y=precip[~mask], name='Normal', marker_color='blue', opacity=0.6))
-    fig.add_trace(go.Bar(x=time[mask], y=precip[mask], name=f'Anomaly (n={n_anom})', marker_color='red', opacity=1))
-    fig.add_trace(go.Scatter(x=time[mask], y=precip[mask], mode='markers', name='Marker', marker=dict(color='red', size=8, line=dict(color='white', width=1)), showlegend=False))
-    
-    fig.update_layout(title=f'Precipitation Anomalies (LOF) - Prop: {outlier_prop*100:.1f}%', xaxis_title='Time', yaxis_title='Precipitation (mm)', template='plotly_white', height=500)
-    
-    return fig, n_anom, pct, time[mask], precip[mask]
+with col_grp:
+    selected_group = st.selectbox(f"Select {data_type} Group", available_groups, index=0)
 
-# ======================================================
-# VISUALIZATION LAYOUT
-# ======================================================
-tab1, tab2 = st.tabs(["🌡️ Temperature Outliers (SPC)", "🌧️ Precipitation Anomalies (LOF)"])
+with col_win:
+    window_size = st.slider("Window Size (Hours)", 24, 720, 168)
 
-# --- TAB 1 ---
-with tab1:
-    st.subheader("Temperature Outlier Detection using DCT and SPC")
+with col_lag:
+    lag = st.number_input("Lag (Hours)", -48, 48, 0, help="Positive = Weather leads Energy")
+
+# 6. DATA PROCESSING
+with st.spinner("Aligning time series..."):
+    # A. Energy Series
+    energy_series = df_energy_area[df_energy_area['group'] == selected_group].set_index('date')['mwh']
+    energy_series = energy_series.sort_index().asfreq('h').interpolate(method='time')
+
+    # B. Weather Data
+    coords = st.session_state["selected_coords"]
+    df_weather = utils.fetch_weather_api(coords['lat'], coords['lon'], f"{selected_year}-01-01", f"{selected_year}-12-31")
     
-    # Controls in 2 Columns
-    c1, c2 = st.columns(2)
-    with c1:
-        freq_cutoff = st.slider("Frequency Cutoff", 0.01, 0.20, 0.05, 0.01, help="Lower = removes more seasonal trends")
-    with c2:
-        n_std = st.slider("Standard Deviations", 1.0, 5.0, 3.0, 0.5, help="Number of σ for SPC boundaries")
+    if df_weather.empty:
+        st.error("No weather data found.")
+        st.stop()
+
+    # C. Align Weather Index
+    if df_weather['time'].dt.tz is None:
+        df_weather['time'] = pd.to_datetime(df_weather['time'], utc=True)
         
-    # Full Width Button
-    if st.button("Detect Temperature Outliers", type="primary", use_container_width=True):
-        with st.spinner("Analyzing..."):
-            fig, n_out, pct, dates, vals = detect_temperature_outliers(df, freq_cutoff, n_std)
-            
-            # Full Width Plot
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.markdown("---")
-            st.subheader("📊 Outlier Statistics")
-            
-            # Metrics Below Plot
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Outliers", int(n_out))
-            m2.metric("Percentage", f"{pct:.2f}%")
-            m3.metric("Boundary Range", f"±{n_std}σ")
-            
-            if n_out > 0:
-                with st.expander("🔍 View Outlier Details"):
-                    out_df = pd.DataFrame({"Date": dates, "Temperature": vals})
-                    st.dataframe(out_df, use_container_width=True)
+    df_weather['time'] = df_weather['time'].dt.tz_convert("Europe/Oslo")
+    
+    weather_series = df_weather.set_index('time')[selected_weather]
+    weather_series = weather_series.sort_index().asfreq('h').interpolate(method='time')
 
-# --- TAB 2 ---
-with tab2:
-    st.subheader("Precipitation Anomaly Detection using LOF")
+    # D. Intersection
+    common_idx = energy_series.index.intersection(weather_series.index)
     
-    c1, c2 = st.columns(2)
-    with c1:
-        prop = st.slider("Expected Outlier Proportion", 0.001, 0.05, 0.01, 0.001, format="%.3f")
-    with c2:
-        neighbors = st.slider("Number of Neighbors", 20, 200, 50, 10)
-    
-    # REMOVED: The st.info line about expected anomalies
-    
-    if st.button("Detect Precipitation Anomalies", type="primary", use_container_width=True):
-        with st.spinner("Analyzing..."):
-            fig, n_out, pct, dates, vals = detect_precipitation_anomalies(df, prop, neighbors)
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.markdown("---")
-            st.subheader("📊 Anomaly Statistics")
-            
-            m1, m2 = st.columns(2)
-            m1.metric("Total Anomalies", int(n_out))
-            m2.metric("Percentage", f"{pct:.2f}%")
-            
-            if n_out > 0:
-                with st.expander("🔍 View Anomaly Details"):
-                    anom_df = pd.DataFrame({"Date": dates, "Precipitation": vals}).sort_values("Precipitation", ascending=False)
-                    st.dataframe(anom_df, use_container_width=True)
+    if len(common_idx) < 24:
+        st.error(f"Data mismatch: Energy and Weather data do not overlap sufficiently for {selected_year}.")
+        st.stop()
+        
+    ts_energy = energy_series.loc[common_idx]
+    ts_weather = weather_series.loc[common_idx]
+
+# 7. CALCULATIONS & PLOTS
+ts_weather_shifted = ts_weather.shift(lag)
+rolling_corr = ts_energy.rolling(window=window_size).corr(ts_weather_shifted)
+
+# Statistics Row
+st.markdown("### Results")
+
+# Fixed: Defined columns INSIDE the container so the border wraps them
+with st.container(border=True):
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Avg Correlation", f"{rolling_corr.mean():.2f}")
+    m2.metric("Max Correlation", f"{rolling_corr.max():.2f}")
+    m3.metric("Min Correlation", f"{rolling_corr.min():.2f}")
+    m4.metric("Data Points", len(common_idx))
+
+# Plot 1: Correlation Dynamics
+st.subheader("Correlation Dynamics")
+st.markdown(f"Sliding window correlation (window={window_size} hrs) with lag of {lag} hours.")
+
+
+
+
+
+
+fig_corr = go.Figure()
+fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, mode='lines', name='Correlation', line=dict(color='#636EFA', width=2)))
+fig_corr.add_hline(y=0, line_dash="dash", line_color="gray")
+fig_corr.update_layout(
+    height=400, 
+    template="plotly_white", 
+    yaxis=dict(title="Correlation (-1 to 1)", range=[-1.1, 1.1]),
+    margin=dict(l=40, r=40, t=40, b=40)
+)
+st.plotly_chart(fig_corr, use_container_width=True)
+
+# Plot 2: Dual Axis Comparison
+st.subheader("Visual Comparison")
+st.markdown(f"Weather Variable vs {data_type} Group over Time") # Fixed typo 'Varibale'
+
+
+
+
+
+
+fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
+
+fig_dual.add_trace(
+    go.Scatter(x=ts_energy.index, y=ts_energy, name=f"Energy ({selected_group})", line=dict(color='#EF553B', width=1.5)),
+    secondary_y=False
+)
+fig_dual.add_trace(
+    go.Scatter(x=ts_weather.index, y=ts_weather, name=f"Weather ({selected_weather})", line=dict(color='#00CC96', width=1.5, dash='dot')),
+    secondary_y=True
+)
+
+fig_dual.update_layout(
+    height=500, 
+    template="plotly_white", 
+    legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+    margin=dict(l=40, r=40, t=40, b=40)
+)
+fig_dual.update_yaxes(title_text="Energy (MWh)", secondary_y=False)
+fig_dual.update_yaxes(title_text=selected_weather, secondary_y=True)
+
+st.plotly_chart(fig_dual, use_container_width=True)
