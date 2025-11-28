@@ -9,7 +9,7 @@ st.set_page_config(page_title="Correlation Analysis", layout="wide")
 # 1. STYLING
 utils.render_sidebar()
 
-st.title("🔗 Sliding Window Correlation")
+st.title("Sliding Window Correlation")
 st.markdown("Analyze how **Weather** drivers impact **Energy** patterns over time.")
 
 # --- ACTIVE AREA CONTEXT ---
@@ -67,7 +67,7 @@ df_energy_area = df_energy[df_energy['price_area'] == selected_area]
 available_groups = sorted(df_energy_area['group'].unique())
 
 # 5. ANALYSIS CONFIGURATION (Separate Row)
-st.subheader("⚙️ Analysis Configuration")
+st.subheader("Analysis Configuration")
 col_grp, col_win, col_lag = st.columns([1, 1, 1])
 
 with col_grp:
@@ -126,7 +126,7 @@ with st.container(border=True):
     m4.metric("Data Points", len(common_idx))
 
 # Plot 1: Correlation Dynamics
-st.subheader("1. Correlation Dynamics")
+st.subheader("Correlation Dynamics")
 fig_corr = go.Figure()
 fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, mode='lines', name='Correlation', line=dict(color='#636EFA', width=2)))
 fig_corr.add_hline(y=0, line_dash="dash", line_color="gray")
@@ -139,7 +139,7 @@ fig_corr.update_layout(
 st.plotly_chart(fig_corr, use_container_width=True)
 
 # Plot 2: Dual Axis Comparison
-st.subheader("2. Visual Comparison")
+st.subheader("Visual Comparison")
 fig_dual = make_subplots(specs=[[{"secondary_y": True}]])
 
 fig_dual.add_trace(
@@ -162,9 +162,3 @@ fig_dual.update_yaxes(title_text=selected_weather, secondary_y=True)
 
 st.plotly_chart(fig_dual, use_container_width=True)
 
-st.info("""
-**Interpretation Guide:**
-* **Positive (near +1):** When weather goes UP, Energy goes UP (e.g., High Wind = High Production).
-* **Negative (near -1):** When weather goes UP, Energy goes DOWN (e.g., High Temp = Low Heating Consumption).
-* **Zero:** No clear relationship.
-""")
