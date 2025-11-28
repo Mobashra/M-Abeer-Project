@@ -6,52 +6,56 @@ import utils
 
 st.set_page_config(page_title="Correlation Analysis", layout="wide")
 
-# 1. STYLING (No safety block here, just styling)
+# 1. STYLING
 utils.render_sidebar()
 
 st.title("🔗 Sliding Window Correlation")
 st.markdown("Analyze how **Weather** drivers impact **Energy** patterns over time.")
 
-# 2. STATE & LOCAL SELECTION LOGIC
-# If no global area is selected, default to NO1
+# --- ACTIVE AREA CONTEXT ---
+current_context_area = st.session_state.get("selected_price_area", "NO1")
+st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+
+# 2. STATE & DEFAULTS
 if "selected_price_area" not in st.session_state:
     st.session_state["selected_price_area"] = "NO1"
     default = utils.CITIES["NO1"]
     st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
 
-# 3. CONTROLS
+# 3. GLOBAL CONTROLS
 with st.container():
-    # Added 'Region' as the first column
     c1, c2, c3, c4 = st.columns(4)
     
     with c1:
         # Local Region Selector
         area_list = sorted(utils.CITIES.keys())
-        current_idx = area_list.index(st.session_state["selected_price_area"]) if st.session_state["selected_price_area"] in area_list else 0
+        # Safe index finding
+        try:
+            current_idx = area_list.index(st.session_state["selected_price_area"])
+        except ValueError:
+            current_idx = 0 # Default to first if not found
         
         selected_area = st.selectbox("Region", area_list, index=current_idx)
         
-        # Update Global State if changed locally
+        # Update Global State
         if selected_area != st.session_state["selected_price_area"]:
             st.session_state["selected_price_area"] = selected_area
-            # Update weather coordinates to the region's center
             city = utils.CITIES[selected_area]
             st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
             st.rerun()
 
     with c2:
+        # Default index=0 is 2021
         selected_year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
     with c3:
         data_type = st.radio("Energy Type", ["Production", "Consumption"], horizontal=True)
     with c4:
         selected_weather = st.selectbox("Weather Variable", utils.WEATHER_VARS, index=2) # Default Wind Speed
 
-# Context Info
-coords = st.session_state["selected_coords"]
-st.info(f"**Analysis Scope:** {selected_area} (Weather Source: {coords['lat']:.2f}, {coords['lon']:.2f})")
+st.divider()
 
-# 4. LOAD DATA
-with st.spinner(f"Loading {data_type} data..."):
+# 4. LOAD ENERGY DATA
+with st.spinner(f"Loading {data_type} data for {selected_year}..."):
     df_energy = utils.load_yearly_data(data_type, selected_year)
 
 if df_energy.empty:
@@ -62,18 +66,27 @@ if df_energy.empty:
 df_energy_area = df_energy[df_energy['price_area'] == selected_area]
 available_groups = sorted(df_energy_area['group'].unique())
 
-# Group Selector (Dynamic based on data)
-col_grp, col_param = st.columns([1, 2])
+# 5. ANALYSIS CONFIGURATION (Separate Row)
+st.subheader("⚙️ Analysis Configuration")
+col_grp, col_win, col_lag = st.columns([1, 1, 1])
+
 with col_grp:
     selected_group = st.selectbox(f"Select {data_type} Group", available_groups, index=0)
 
-# 5. DATA PREPARATION
+with col_win:
+    window_size = st.slider("Window Size (Hours)", 24, 720, 168)
+
+with col_lag:
+    lag = st.number_input("Lag (Hours)", -48, 48, 0, help="Positive = Weather leads Energy")
+
+# 6. DATA PROCESSING
 with st.spinner("Aligning time series..."):
     # A. Energy Series
     energy_series = df_energy_area[df_energy_area['group'] == selected_group].set_index('date')['mwh']
     energy_series = energy_series.sort_index().asfreq('h').interpolate(method='time')
 
     # B. Weather Data
+    coords = st.session_state["selected_coords"]
     df_weather = utils.fetch_weather_api(coords['lat'], coords['lon'], f"{selected_year}-01-01", f"{selected_year}-12-31")
     
     if df_weather.empty:
@@ -99,31 +112,30 @@ with st.spinner("Aligning time series..."):
     ts_energy = energy_series.loc[common_idx]
     ts_weather = weather_series.loc[common_idx]
 
-# 6. ANALYSIS PARAMETERS
-with col_param:
-    with st.expander("⚙️ Sliding Window Parameters", expanded=False):
-        c_a, c_b = st.columns(2)
-        window_size = c_a.slider("Window Size (Hours)", 24, 720, 168)
-        lag = c_b.number_input("Lag (Hours)", -48, 48, 0, help="Positive = Weather leads")
-
-# 7. CALCULATIONS & PLOT
+# 7. CALCULATIONS & PLOTS
 ts_weather_shifted = ts_weather.shift(lag)
 rolling_corr = ts_energy.rolling(window=window_size).corr(ts_weather_shifted)
 
 # Statistics Row
-st.divider()
+st.markdown("### Results")
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Avg Correlation", f"{rolling_corr.mean():.2f}")
-m2.metric("Max Correlation", f"{rolling_corr.max():.2f}")
-m3.metric("Min Correlation", f"{rolling_corr.min():.2f}")
-m4.metric("Data Points", len(common_idx))
+with st.container(border=True):
+    m1.metric("Avg Correlation", f"{rolling_corr.mean():.2f}")
+    m2.metric("Max Correlation", f"{rolling_corr.max():.2f}")
+    m3.metric("Min Correlation", f"{rolling_corr.min():.2f}")
+    m4.metric("Data Points", len(common_idx))
 
 # Plot 1: Correlation Dynamics
 st.subheader("1. Correlation Dynamics")
 fig_corr = go.Figure()
 fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, mode='lines', name='Correlation', line=dict(color='#636EFA', width=2)))
 fig_corr.add_hline(y=0, line_dash="dash", line_color="gray")
-fig_corr.update_layout(height=400, template="plotly_white", yaxis=dict(title="Correlation (-1 to 1)", range=[-1.1, 1.1]))
+fig_corr.update_layout(
+    height=400, 
+    template="plotly_white", 
+    yaxis=dict(title="Correlation (-1 to 1)", range=[-1.1, 1.1]),
+    margin=dict(l=40, r=40, t=40, b=40)
+)
 st.plotly_chart(fig_corr, use_container_width=True)
 
 # Plot 2: Dual Axis Comparison
@@ -139,7 +151,12 @@ fig_dual.add_trace(
     secondary_y=True
 )
 
-fig_dual.update_layout(height=500, template="plotly_white", legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"))
+fig_dual.update_layout(
+    height=500, 
+    template="plotly_white", 
+    legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+    margin=dict(l=40, r=40, t=40, b=40)
+)
 fig_dual.update_yaxes(title_text="Energy (MWh)", secondary_y=False)
 fig_dual.update_yaxes(title_text=selected_weather, secondary_y=True)
 
