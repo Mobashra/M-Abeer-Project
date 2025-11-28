@@ -29,13 +29,13 @@ with st.container():
     
     with c1:
         st.markdown("#### 📅 Time Selection")
-        # UPDATED: Range expanded to 2020-2024 to cover full winters
+        # Range Slider (Matches your picture)
         year_range = st.slider(
             "Select Hydro Year Range",
-            min_value=2020,  # Allows capturing Winter 2021 (July 2020 - June 2021)
-            max_value=2024,  # Allows capturing Winter 2024 (July 2024 - June 2025)
-            value=(2021, 2023), 
-            help="A Hydro Year runs from July 1st to June 30th."
+            min_value=2020,
+            max_value=2025,
+            value=(2020, 2024), # Default range
+            help="Select the start and end years for analysis."
         )
         start_year, end_year = year_range
         
@@ -50,9 +50,7 @@ with st.container():
             theta = st.number_input("Relocation (θ)", value=0.5, step=0.1, help="Relocation coefficient")
 
     if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
-        # Define Hydro Year Range:
-        # If user picks 2020, we start July 1, 2020.
-        # If user picks 2024 (as end), we go until June 30, 2025.
+        # Define Hydro Year Range: July 1st (Start Year) -> June 30th (End Year + 1)
         fetch_start = f"{start_year}-07-01"
         fetch_end = f"{end_year + 1}-06-30"
         
@@ -82,7 +80,7 @@ with st.container():
            
             # A. Annual Totals
             res = af.compute_seasonal_transport(sub, T, F, theta)
-            res['Season'] = f"{y}-{y+1}" 
+            res['Season'] = f"{y}-{y+1}" # Label as "2021-2022"
             
             # B. Fence Heights (Tabler 2003)
             res['Wyoming (m)'] = af.compute_fence_height(res['Qt_kg_m'], "Wyoming")
@@ -126,7 +124,7 @@ with st.container():
 
         # --- TAB 1: ANNUAL ---
         with tab1:
-            # EQUAL COLUMNS [1, 1]
+            # EQUAL COLUMNS [1, 1] for balanced layout
             c_left, c_right = st.columns([1, 1])
            
             with c_left:
