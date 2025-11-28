@@ -46,7 +46,7 @@ col_left, col_right = st.columns(2, gap="medium")
 
 # --- LEFT COLUMN: Area Selection & Pie Chart ---
 with col_left:
-    st.subheader("1. Regional Distribution")
+    st.subheader("Regional Distribution")
     
     # A. Radio Button for Price Area
     available_areas = sorted(df['price_area'].unique())
@@ -90,7 +90,7 @@ with col_left:
 
 # --- RIGHT COLUMN: Group/Month Selection & Line Chart ---
 with col_right:
-    st.subheader("2. Seasonal Details")
+    st.subheader("Seasonal Details")
     
     if not df_area.empty:
         # A. Pills for Groups

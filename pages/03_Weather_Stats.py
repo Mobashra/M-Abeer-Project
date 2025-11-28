@@ -9,14 +9,21 @@ st.set_page_config(page_title="Weather Statistics", layout="wide")
 # 1. SIDEBAR STYLING
 utils.render_sidebar()
 
-st.title("🌤️ Weather Data Analysis")
+st.title("Weather Data Analysis")
+st.header("Explore Weather Statistics & Trends (2021-2024)")
+
+# --- ACTIVE AREA CONTEXT ---
+current_context_area = st.session_state.get("selected_price_area", "NO1")
+st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
+
+
 
 # 2. GLOBAL SETTINGS & FALLBACK
 # If no area selected globally, default to NO1
 if "selected_price_area" not in st.session_state or not st.session_state["selected_price_area"]:
     st.session_state["selected_price_area"] = "NO1"
     default = utils.CITIES["NO1"]
-    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
+    
 
 # Allow local override if needed, but sync with global
 col_area, col_info = st.columns([1, 3])
