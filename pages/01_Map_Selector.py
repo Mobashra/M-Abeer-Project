@@ -80,28 +80,20 @@ def get_clicked_area_id(lat, lon, geo_data):
         except: continue
     return None
 
-# --- CLICKABLE GRID (UPDATED: Finds Price Area) ---
+# --- CREATE CLICKABLE GRID ---
 clickable_points = []
-if geojson_munis and geojson_areas:
+if geojson_munis:
     for f in geojson_munis['features']:
         try:
             geom = shape(f['geometry'])
             cent = geom.centroid
+            props = f['properties']
+            name = "Unknown"
+            if 'navn' in props:
+                if isinstance(props['navn'], list) and len(props['navn']) > 0: name = props['navn'][0].get('navn')
+                elif isinstance(props['navn'], str): name = props['navn']
             
-            # NEW LOGIC: Find which Price Area this centroid belongs to
-            price_area_name = "Unknown"
-            for area_f in geojson_areas['features']:
-                area_geom = shape(area_f['geometry'])
-                if area_geom.contains(cent):
-                    price_area_name = area_f['properties'].get('ElSpotOmr') or area_f['properties'].get('ElSpot_omr')
-                    break
-            
-            # Store the Price Area name instead of the Municipality name
-            clickable_points.append({
-                "lat": cent.y, 
-                "lon": cent.x, 
-                "name": price_area_name # <--- Now holds 'NO 1', 'NO 5' etc.
-            })
+            clickable_points.append({"lat": cent.y, "lon": cent.x, "name": name})
         except: continue
 
 df_clicks = pd.DataFrame(clickable_points)
@@ -115,7 +107,7 @@ with c_map:
     show_munis = st.toggle("🔍 View Municipalities", value=False)
     feature_key = "properties.ElSpotOmr"
 
-    # --- LAYER 1: PRICE AREAS (Base) ---
+    # --- LAYER 1: PRICE AREAS ---
     if not df.empty:
         fig = px.choropleth_mapbox(
             df, geojson=geojson_areas, locations="price_area_map", featureidkey=feature_key,
@@ -131,7 +123,6 @@ with c_map:
             geojson=geojson_areas, locations=["NO 1"], featureidkey=feature_key,
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
         )
-        fig.update_traces(hovertemplate="<b>%{location}</b><extra></extra>")
 
     # --- LAYER 2: MUNICIPALITIES ---
     if show_munis and geojson_munis:
@@ -140,19 +131,11 @@ with c_map:
         if muni_key:
             prop = muni_key.split('.')[1]
             locs = [f['properties'].get(prop) for f in geojson_munis['features']]
-            names = []
-            for f in geojson_munis['features']:
-                navn = f['properties'].get('navn')
-                if isinstance(navn, list) and len(navn) > 0: names.append(navn[0].get('navn', 'Unknown'))
-                elif isinstance(navn, str): names.append(navn)
-                else: names.append('Unknown')
-
             fig.add_trace(go.Choroplethmapbox(
                 geojson=geojson_munis, locations=locs, featureidkey=muni_key, z=[1]*len(locs),
                 colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
                 marker_line_color='rgba(20, 20, 20, 0.8)', marker_line_width=0.8,
-                showscale=False, hoverinfo='text', text=names, 
-                name="Municipalities"
+                showscale=False, hoverinfo='skip', name="Municipalities"
             ))
 
     # --- LAYER 3: CLICK GRID (Invisible) ---
@@ -162,7 +145,7 @@ with c_map:
             mode='markers', 
             marker=go.scattermapbox.Marker(size=12, color='white', opacity=0.01),
             hoverinfo='text', 
-            text=df_clicks["name"], # Now shows "NO 1", "NO 2" etc. on hover
+            text=df_clicks["name"],
             name="Region"
         ))
 
@@ -204,7 +187,6 @@ with c_map:
             # Hit Test Region
             hit_id = get_clicked_area_id(clat, clon, geojson_areas)
             if hit_id:
-                # Clean ID: "NO 1" -> "NO1"
                 clean = hit_id.replace(" ", "")
                 if clean in utils.CITIES and clean != st.session_state["selected_price_area"]:
                     st.session_state["selected_price_area"] = clean
@@ -218,33 +200,28 @@ with c_map:
                 st.rerun()
 
 with c_info:
-    st.markdown("#### Selection Status")
+    st.markdown("#### 📌 Selection Status")
     with st.container(border=True):
-        # 1. REGION INFO (Updated)
+        # 1. REGION INFO (Blue)
         curr = st.session_state["selected_price_area"]
-        # Retrieve static center coordinates for this region from utils
         center = utils.CITIES[curr]
-        
         st.info(f"**Active Region**\n# {curr}")
         st.caption(f"**Region Center:**\nLat {center['lat']:.4f}, Lon {center['lon']:.4f}")
         
         st.divider()
         
-        # 2. PIN INFO
+        # 2. PIN INFO (Red)
         if "selected_coords" in st.session_state:
             pin = st.session_state["selected_coords"]
             st.error(f"**📍 Pin Location**\n\nLat: {pin['lat']:.4f}\nLon: {pin['lon']:.4f}")
         
-        # 3. ELEVATION (Custom Style)
+        # 3. ELEVATION (Orange - Custom Style)
         if "elevation" in st.session_state:
-
-            st.markdown(
-                ":orange-badge[⛰️ Elevation]"
-                f" **{st.session_state['elevation']} meters** above sea level."
-            )
+            st.markdown(f"""
+                <div style="background-color: #ffedd5; padding: 1rem; border-radius: 0.5rem; border: 1px solid #fb923c; margin-top: 1rem;">
+                    <p style="margin: 0; font-size: 0.9rem; color: #c2410c; font-weight: bold;">⛰️ Elevation</p>
+                    <p style="margin: 0; font-size: 1.5rem; color: #9a3412; font-weight: bold;">{st.session_state['elevation']} m</p>
+                </div>
+            """, unsafe_allow_html=True)
         else:
             st.caption("Click map to fetch elevation.")
-
-
-
-
