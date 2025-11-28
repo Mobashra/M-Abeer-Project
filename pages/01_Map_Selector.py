@@ -123,6 +123,9 @@ df_clicks = pd.DataFrame(clickable_points)
 # ======================================================
 # 4. MAP VISUALIZATION
 # ======================================================
+# ======================================================
+# 4. MAP VISUALIZATION
+# ======================================================
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
@@ -145,27 +148,6 @@ with c_map:
             mapbox_style="carto-positron", zoom=4.5, center={"lat": 65.0, "lon": 16.0}, opacity=0.3
         )
 
-    # --- LAYER 1.5: STATIC TEXT LABELS (NO1, NO2, ...) ---
-    # This adds permanent text labels using the center coordinates from utils.CITIES
-    lbl_lats = []
-    lbl_lons = []
-    lbl_names = []
-    
-    for area_name, coords in utils.CITIES.items():
-        lbl_names.append(area_name)
-        lbl_lats.append(coords['lat'])
-        lbl_lons.append(coords['lon'])
-
-    fig.add_trace(go.Scattermapbox(
-        lat=lbl_lats,
-        lon=lbl_lons,
-        mode='text',
-        text=lbl_names,
-        textfont=dict(size=24, color='black', family="Arial Black"), # Large, bold text
-        hoverinfo='skip', # Don't interfere with clicks
-        showlegend=False
-    ))
-
     # --- LAYER 2: MUNICIPALITIES (Optional Outline) ---
     if show_munis and geojson_munis:
         # 1. Find the ID key
@@ -187,12 +169,11 @@ with c_map:
                 marker_line_color='rgba(50, 50, 50, 0.5)', 
                 marker_line_width=0.5,
                 showscale=False, 
-                hoverinfo='skip', # Let the invisible layer handle hover
+                hoverinfo='skip', 
                 name="Municipalities"
             ))
 
     # --- LAYER 3: CLICK GRID (The "Touch Screen" Layer) ---
-    # Size 45 covers gaps. Opacity 0.01 makes it invisible but clickable.
     if not df_clicks.empty:
         fig.add_trace(go.Scattermapbox(
             lat=df_clicks["lat"], lon=df_clicks["lon"],
@@ -220,6 +201,27 @@ with c_map:
             mode='markers', marker=go.scattermapbox.Marker(size=14, color='red', symbol='circle'),
             text=["📍 Pin"], hoverinfo='text', name="Pin"
         ))
+
+    # --- LAYER 6: STATIC TEXT LABELS (Moved to END to be ON TOP) ---
+    lbl_lats = []
+    lbl_lons = []
+    lbl_names = []
+    
+    for area_name, coords in utils.CITIES.items():
+        # Space out labels slightly if needed, or use exact city center
+        lbl_names.append(area_name)
+        lbl_lats.append(coords['lat'])
+        lbl_lons.append(coords['lon'])
+
+    fig.add_trace(go.Scattermapbox(
+        lat=lbl_lats,
+        lon=lbl_lons,
+        mode='text',
+        text=lbl_names,
+        textfont=dict(size=20, color='black', family="Arial Black"), 
+        hoverinfo='skip', # Don't interfere with clicks
+        showlegend=False
+    ))
 
     fig.update_layout(margin=dict(r=0, t=0, l=0, b=0), clickmode='event+select', height=800)
     
@@ -263,6 +265,9 @@ with c_map:
                 if elev is not None: st.session_state["elevation"] = elev
 
                 st.rerun()
+
+
+            
 
 with c_info:
     st.markdown("#### Selection Status")
