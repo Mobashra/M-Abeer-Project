@@ -5,7 +5,7 @@ from streamlit_folium import st_folium
 from shapely.geometry import shape, Point
 import utils
 from datetime import date
-import json
+import branca.colormap as cm
 
 # ======================================================
 # PAGE CONFIG
@@ -28,7 +28,7 @@ if "map_center" not in st.session_state:
 current_area = st.session_state["selected_price_area"]
 
 # ======================================================
-# 2. CONTROLS (5 Columns for Perfect Alignment)
+# 2. CONTROLS (5 Columns)
 # ======================================================
 with st.container():
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -39,22 +39,18 @@ with st.container():
 
     with c2:
         st.markdown("###### 2. Start Date")
-        # Default 2021
         start_d = st.date_input("Start", date(2021, 1, 1), min_value=date(2021, 1, 1), max_value=date(2024, 12, 31), label_visibility="collapsed")
 
     with c3:
         st.markdown("###### 3. End Date")
-        # Default 2021
-        end_d = st.date_input("End", date(2021, 12, 31), min_value=date(2021, 1, 1), max_value=date(2024, 12, 31), label_visibility="collapsed")
+        end_d = st.date_input("End", date(2023, 12, 31), min_value=date(2021, 1, 1), max_value=date(2024, 12, 31), label_visibility="collapsed")
 
     with c4:
         st.markdown("###### 4. Group")
         groups = ["hydro", "wind", "thermal", "solar", "other"] if data_type == "Production" else ["household", "industry", "primary", "tertiary"]
-        
         idx = 0
         if "last_group" in st.session_state and st.session_state["last_group"] in groups:
             idx = groups.index(st.session_state["last_group"])
-        
         selected_group = st.selectbox("Group", groups, index=idx, label_visibility="collapsed")
         st.session_state["last_group"] = selected_group
 
@@ -67,14 +63,13 @@ with st.container():
             st.session_state["selected_price_area"] = manual_area
             city = utils.CITIES[manual_area]
             st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
-            # Move map to selection
             st.session_state["map_center"] = [city["lat"], city["lon"]]
             st.rerun()
 
 st.divider()
 
 # ======================================================
-# 3. HELPER FUNCTIONS (Geometric Logic)
+# 3. HELPER FUNCTIONS
 # ======================================================
 @st.cache_data
 def get_geo_data():
@@ -84,19 +79,15 @@ def get_geo_data():
     return areas, munis
 
 def get_clicked_area(lat, lon, geojson_data):
-    """
-    Mathematical Hit Testing:
-    Checks which Polygon actually contains the clicked Point.
-    This works even if visual layers (like Municipalities) block the click.
-    """
+    """Mathematical Hit Testing."""
     if not geojson_data: return None
     point = Point(lon, lat)
     for feature in geojson_data['features']:
         try:
             polygon = shape(feature['geometry'])
             if polygon.contains(point):
-                # Try to find the ID (ElSpotOmr or ElSpot_omr)
                 props = feature['properties']
+                # Try standard keys
                 return props.get('ElSpotOmr') or props.get('ElSpot_omr')
         except:
             continue
@@ -105,7 +96,6 @@ def get_clicked_area(lat, lon, geojson_data):
 # ======================================================
 # 4. MAP LOGIC
 # ======================================================
-# Changed Ratio: [3, 1] gives a wider map area, fitting Norway's length better when we increase height
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
@@ -113,12 +103,24 @@ with c_map:
     df = utils.load_map_stats(start_d, end_d, data_type, selected_group)
     geo_areas, geo_munis = get_geo_data()
     
-    # Create Data Dict for Coloring {NO1: 1234.5, ...}
+    # 2. Setup Data Dictionary & Color Map
     data_dict = {}
+    min_val, max_val = 0, 1
+    
     if not df.empty:
         data_dict = df.set_index('price_area')['avg_value'].to_dict()
+        min_val = df['avg_value'].min()
+        max_val = df['avg_value'].max()
 
-    # 2. Initialize Folium Map
+    # Create Viridis Color Scale (Like Plotly)
+    colormap = cm.LinearColormap(
+        colors=['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'], # Viridis Palette
+        vmin=min_val,
+        vmax=max_val,
+        caption=f"Average {selected_group.capitalize()} (MWh)"
+    )
+
+    # 3. Initialize Map
     m = folium.Map(
         location=st.session_state["map_center"],
         zoom_start=st.session_state["map_zoom"],
@@ -126,36 +128,28 @@ with c_map:
         control_scale=True,
         zoom_control=True
     )
+    
+    # Add Color Legend to Map
+    colormap.add_to(m)
 
-    # 3. Style Function (Coloring Logic)
+    # 4. Style Function
     def style_function(feature):
         area_id = feature['properties'].get('ElSpotOmr') or feature['properties'].get('ElSpot_omr')
         
-        # Default Styles
-        fill_color = "#f0f0f0"
-        weight = 1
-        color = "#666666"
-        opacity = 0.5
-        
-        # Color by Data
+        # Color Logic
+        fill_color = "#cccccc" # Default Grey
         if area_id and area_id in data_dict:
-            val = data_dict[area_id]
-            max_val = max(data_dict.values()) if data_dict else 1
-            # Normalize 0-1
-            intensity = val / max_val
+            fill_color = colormap(data_dict[area_id])
             
-            # Manual Blue Scale (Gradient)
-            if intensity > 0.8: fill_color = "#084594"
-            elif intensity > 0.6: fill_color = "#2171b5"
-            elif intensity > 0.4: fill_color = "#4292c6"
-            elif intensity > 0.2: fill_color = "#9ecae1"
-            else: fill_color = "#deebf7"
-            
-        # Highlight Selected Area
+        # Highlight Logic
+        color = "#555555"
+        weight = 1
+        opacity = 0.6
+        
         if area_id == st.session_state["selected_price_area"]:
-            color = "#ff0000" # Red Border
+            color = "#ff0000" # Red Border for Selection
             weight = 3
-            opacity = 0.7
+            opacity = 0.8
 
         return {
             "fillColor": fill_color,
@@ -164,46 +158,50 @@ with c_map:
             "fillOpacity": opacity,
         }
 
-    # 4. Zoom-Dependent Layers (Bonus Implementation)
+    # 5. Layers Logic
     current_zoom = st.session_state["map_zoom"]
     
-    # Always add Price Areas (Base Layer)
+    # --- Price Areas (Base) ---
     if geo_areas:
+        # Detect key for Price Area tooltip to prevent crash
+        pa_props = geo_areas['features'][0]['properties']
+        pa_key = 'ElSpotOmr' if 'ElSpotOmr' in pa_props else 'ElSpot_omr'
+        
         folium.GeoJson(
             geo_areas,
             style_function=style_function,
-            tooltip=folium.GeoJsonTooltip(
-                fields=['ElSpotOmr'],
-                aliases=['Price Area:'],
-                localize=True
-            ),
+            tooltip=folium.GeoJsonTooltip(fields=[pa_key], aliases=['Area:']),
             name="Price Areas"
         ).add_to(m)
 
-    # Add Municipalities ONLY if zoomed in (Zoom > 6)
+    # --- Municipalities (Zoom Dependent) ---
     if current_zoom > 6 and geo_munis:
-        folium.GeoJson(
-            geo_munis,
-            style_function=lambda x: {
-                "fillColor": "transparent", # Transparent fill
-                "color": "#333333",         # Dark Grey border
-                "weight": 0.8,
-                "dashArray": "5, 5",        # Dashed line
-            },
-            # Tooltip with correct name parsing
-            tooltip=folium.GeoJsonTooltip(
-                # We assume the name is in 'navn' or 'kommunenavn'
-                # Note: Folium tooltips are simpler than Plotly's. 
-                # If 'navn' is a complex object, it might show raw text.
-                # However, this usually works for standard Geonorge files.
-                fields=['kommunenummer'], 
-                aliases=['Muni ID:'],
-                sticky=False
-            ),
-            name="Municipalities"
-        ).add_to(m)
+        # AUTO-DETECT KEY (The Fix for KeyError)
+        muni_props = geo_munis['features'][0]['properties']
+        muni_key = None
+        if 'nummer' in muni_props: muni_key = 'nummer'
+        elif 'kommunenummer' in muni_props: muni_key = 'kommunenummer'
+        elif 'id' in muni_props: muni_key = 'id'
+        
+        # Only add layer if we found a valid key
+        if muni_key:
+            folium.GeoJson(
+                geo_munis,
+                style_function=lambda x: {
+                    "fillColor": "transparent",
+                    "color": "#000000",
+                    "weight": 0.8,
+                    "dashArray": "5, 5",
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=[muni_key], 
+                    aliases=['Municipality ID:'],
+                    sticky=False
+                ),
+                name="Municipalities"
+            ).add_to(m)
 
-    # 5. The Pointer (Marker)
+    # 6. The Pointer
     if st.session_state["selected_coords"]:
         coords = st.session_state["selected_coords"]
         folium.Marker(
@@ -212,8 +210,7 @@ with c_map:
             icon=folium.Icon(color="red", icon="info-sign"),
         ).add_to(m)
 
-    # 6. Render Map
-    # height=750 makes it "Longer" as requested
+    # 7. Render
     map_data = st_folium(
         m,
         height=750, 
@@ -222,12 +219,12 @@ with c_map:
         key="folium_map"
     )
 
-    # 7. Interaction Logic
+    # 8. Interaction Loop
     if map_data:
-        # A. Detect Zoom Change
+        # Zoom Update
         if map_data["zoom"] != st.session_state["map_zoom"]:
             st.session_state["map_zoom"] = map_data["zoom"]
-            # Save center to prevent resetting view
+            # Keep center
             bounds = map_data["bounds"]
             if bounds:
                 lat = (bounds["_southWest"]["lat"] + bounds["_northEast"]["lat"]) / 2
@@ -235,24 +232,20 @@ with c_map:
                 st.session_state["map_center"] = [lat, lng]
             st.rerun()
 
-        # B. Detect Click
+        # Click Update
         if map_data["last_clicked"]:
             lat = map_data["last_clicked"]["lat"]
             lon = map_data["last_clicked"]["lng"]
             
-            # Check if it's a NEW click (Float comparison with small tolerance)
             prev_lat = st.session_state["selected_coords"]["lat"]
             prev_lon = st.session_state["selected_coords"]["lon"]
             
+            # If new click
             if abs(lat - prev_lat) > 0.0001 or abs(lon - prev_lon) > 0.0001:
-                
-                # 1. Update Coordinates (Pointer)
                 st.session_state["selected_coords"] = {"lat": lat, "lon": lon}
                 
-                # 2. Hit Test: Calculate which Price Area was clicked
-                # This fixes the "Blocked Click" issue
+                # Hit Test Area
                 clicked_area = get_clicked_area(lat, lon, geo_areas)
-                
                 if clicked_area and clicked_area in utils.CITIES:
                     if clicked_area != st.session_state["selected_price_area"]:
                         st.session_state["selected_price_area"] = clicked_area
@@ -278,16 +271,3 @@ with c_info:
     * **Zoom In (+):** Detailed Municipality borders appear automatically.
     * **Click:** Drops a **Red Pin** and auto-selects the region.
     """)
-    
-    # Legend
-    st.caption("Color Scale (MWh)")
-    st.markdown(
-        """
-        <div style="background: linear-gradient(to right, #deebf7, #084594); height: 10px; width: 100%; border-radius: 5px;"></div>
-        <div style="display: flex; justify-content: space-between; font-size: 12px;">
-            <span>Low</span>
-            <span>High</span>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
