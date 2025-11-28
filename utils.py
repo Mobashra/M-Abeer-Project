@@ -63,6 +63,7 @@ def render_sidebar():
 def check_session_state():
     if "selected_price_area" not in st.session_state:
         st.error("⛔ **No Region Selected**")
+        st.info("Please select a region from the **Map Selector** page first.")
         if st.button("Go to Map"): st.switch_page("pages/01_Map_Selector.py")
         st.stop()
 
