@@ -16,20 +16,18 @@ st.header("Explore Weather Statistics & Trends (2021-2024)")
 current_context_area = st.session_state.get("selected_price_area", "NO1")
 st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
-
-
 # 2. GLOBAL SETTINGS & FALLBACK
 # If no area selected globally, default to NO1
 if "selected_price_area" not in st.session_state or not st.session_state["selected_price_area"]:
     st.session_state["selected_price_area"] = "NO1"
     default = utils.CITIES["NO1"]
-    
+    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
 
-# Allow local override if needed, but sync with global
-col_area, col_info = st.columns([1, 3])
+# Local selector that updates global state
+# We use columns to keep the selector compact (1/4 width)
+c1, c2 = st.columns([1, 3])
 
-with col_area:
-    # Local selector that updates global state
+with c1:
     area_list = sorted(utils.CITIES.keys())
     current_area = st.session_state["selected_price_area"]
     
@@ -45,13 +43,14 @@ with col_area:
         st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
         st.rerun()
 
+# Ensure coords are loaded for the API call
+if "selected_coords" not in st.session_state:
+    city = utils.CITIES[current_area]
+    st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+
 coords = st.session_state["selected_coords"]
 
-with col_info:
-    st.info(f"**Analysis Scope:** {selected_area} ({coords['lat']:.2f}, {coords['lon']:.2f})")
-
 # 3. FETCH DATA
-# Using cache to avoid re-fetching if user switches tabs
 @st.cache_data(ttl=3600)
 def get_full_weather_history(lat, lon):
     return utils.fetch_weather_api(lat, lon, "2021-01-01", "2024-12-31")
@@ -66,11 +65,11 @@ if df_full.empty:
 df_full['Year'] = df_full['time'].dt.year
 df_full['Month'] = df_full['time'].dt.month
 
-# 4. TABS (Your Original Logic)
+# 4. TABS
 tab1, tab2 = st.tabs(["📊 Dataset Overview (First Month)", "📈 Yearly Trend Visualization"])
 
 # ==================================================
-# TAB 1: DATASET OVERVIEW (CLEAN & ALIGNED)
+# TAB 1: DATASET OVERVIEW
 # ==================================================
 with tab1:
     st.subheader("Dataset Overview with First Month Trends")
@@ -130,11 +129,12 @@ with tab1:
 with tab2:
     st.subheader("Yearly Trend Visualization")
     
-    c1, c2, c3 = st.columns([3, 1, 1])
+    c1, c2 = st.columns([3, 1])
     with c1:
         df_full['YYYY-MM'] = df_full['time'].dt.to_period('M').astype(str)
         unique_months = sorted(df_full['YYYY-MM'].unique())
         
+        # Select Slider for Time Range
         start_month, end_month = st.select_slider(
             "Select Time Range",
             options=unique_months,
@@ -142,7 +142,7 @@ with tab2:
         )
         
     with c2:
-        st.write("")
+        st.write("") # Spacer
         normalize = st.checkbox("Normalize (0-1)", value=False)
         select_all = st.checkbox("Select All Variables", value=False)
 
@@ -151,7 +151,7 @@ with tab2:
     else:
         default_selection = ["temperature_2m"]
             
-    # Full Width Selector
+    # Variables Selector
     selected_cols = st.multiselect("Variables:", utils.WEATHER_VARS, default=default_selection, key=f"vars_{select_all}")
 
     # --- FILTER DATA ---
