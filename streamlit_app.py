@@ -4,6 +4,19 @@ import utils
 
 
 
+
+
+
+# ======================================================
+# PAGE CONFIG
+# ======================================================
+st.set_page_config(
+    page_title="Norwegian Energy Atlas",
+    page_icon="⚡",
+    layout="wide"
+)
+
+
 # --- SIDEBAR NAVIGATION GROUPS ---
 st.sidebar.markdown("### 🗺️ Exploration")
 # The pages 01, 02, 03 will appear here naturally due to sorting
@@ -15,15 +28,6 @@ if st.sidebar.checkbox("Show Advanced Modules", value=True):
     st.sidebar.markdown("### 🔮 Prediction")
     # Pages 07, 08 fall here visually
 
-    
-# ======================================================
-# PAGE CONFIG
-# ======================================================
-st.set_page_config(
-    page_title="Norwegian Energy Atlas",
-    page_icon="⚡",
-    layout="wide"
-)
 
 # ======================================================
 # 1. INITIALIZE GLOBAL STATE (Crucial for App Stability)
