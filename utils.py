@@ -127,13 +127,74 @@ def fetch_weather_api(lat, lon, start_date, end_date):
 
 @st.cache_data(ttl=3600*24)
 def fetch_elevation(lat, lon):
-    """Bonus: Fetch elevation data."""
+    """
+    Robust elevation lookup system:
+    1. Open-Meteo elevation API
+    2. Open-Meteo reverse geocoding elevation (better fallback)
+    3. Mapbox Terrain-RGB (optional, if token exists)
+    """
+
+    # --- 1) Try Open-Meteo elevation API ---
     try:
-        r = requests.get(f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}", timeout=5)
-        if r.status_code == 200:
-            return r.json()["elevation"][0]
-    except: return None
+        r = requests.get(
+            f"https://api.open-meteo.com/v1/elevation?latitude={lat}&longitude={lon}",
+            timeout=5
+        )
+        r.raise_for_status()
+        js = r.json()
+        elev = js.get("elevation", [None])[0]
+        if elev is not None:
+            return round(elev)
+    except:
+        pass
+
+    # --- 2) Try Reverse Geocoding Elevation (More reliable) ---
+    try:
+        r = requests.get(
+            f"https://geocoding-api.open-meteo.com/v1/reverse?latitude={lat}&longitude={lon}",
+            timeout=5
+        )
+        r.raise_for_status()
+        js = r.json()
+        if "elevation" in js and js["elevation"] is not None:
+            return round(js["elevation"])
+    except:
+        pass
+
+    # --- 3) Try Mapbox Terrain-RGB tile query (optional) ---
+    token = st.secrets.get("mapbox", {}).get("token", None)
+    if token:
+        try:
+            # Convert lat/lon to Web Mercator pixel for Terrain-RGB
+            import math
+
+            z = 14
+            lat_rad = math.radians(lat)
+            n = 2.0 ** z
+            x = int((lon + 180.0) / 360.0 * n)
+            y = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+
+            url = f"https://api.mapbox.com/v4/mapbox.terrain-rgb/{z}/{x}/{y}.pngraw?access_token={token}"
+            img = requests.get(url, timeout=5)
+            img.raise_for_status()
+
+            from PIL import Image
+            import numpy as np
+            from io import BytesIO
+
+            im = Image.open(BytesIO(img.content))
+            pix = np.array(im)[im.size[1]//2, im.size[0]//2]  # center pixel = local elevation point
+            R, G, B = pix[:3]
+
+            elevation = -10000 + (R * 256 * 256 + G * 256 + B) * 0.1
+            return round(elevation)
+
+        except:
+            pass
+
+    # Could not determine elevation
     return None
+
 
 @st.cache_data
 def load_geojson():
