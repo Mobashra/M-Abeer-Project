@@ -181,7 +181,8 @@ with c_map:
             marker=go.scattermapbox.Marker(size=45, color='white', opacity=0.01), 
             hoverinfo='text', 
             text=df_clicks["name"],
-            name="Region"
+            name="Region",
+            showlegend=False  # <--- ADD THIS: Hides "Region" from the legend box
         ))
 
     # --- LAYER 4: HIGHLIGHT SELECTED AREA ---
