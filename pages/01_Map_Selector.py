@@ -10,7 +10,7 @@ from datetime import date
 # ======================================================
 st.set_page_config(page_title="Map Selector", layout="wide")
 
-# Render Sidebar (Labels & Info Only)
+# Render Sidebar
 utils.render_sidebar()
 
 st.title("🇳🇴 Regional Energy Overview")
@@ -20,13 +20,11 @@ st.title("🇳🇴 Regional Energy Overview")
 # ======================================================
 if "selected_price_area" not in st.session_state:
     st.session_state["selected_price_area"] = "NO1"
-    default = utils.CITIES["NO1"]
-    st.session_state["selected_coords"] = {"lat": default["lat"], "lon": default["lon"]}
-
-current_area = st.session_state["selected_price_area"]
+    # Default Pin Location (Oslo)
+    st.session_state["selected_coords"] = {"lat": 59.91, "lon": 10.75}
 
 # ======================================================
-# 2. CONTROLS (5 Columns - Dashboard Style)
+# 2. CONTROLS (Dashboard Style - No Numbering)
 # ======================================================
 with st.container():
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -51,13 +49,11 @@ with st.container():
     with c5:
         st.markdown("###### Region")
         area_list = sorted(utils.CITIES.keys())
-        manual_area = st.selectbox("Region", area_list, index=area_list.index(current_area), label_visibility="collapsed")
+        manual_area = st.selectbox("Region", area_list, index=area_list.index(st.session_state["selected_price_area"]), label_visibility="collapsed")
         
-        # Fallback Selection Logic
-        if manual_area != current_area:
+        if manual_area != st.session_state["selected_price_area"]:
             st.session_state["selected_price_area"] = manual_area
-            city = utils.CITIES[manual_area]
-            st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+            # We DO NOT reset the 'selected_coords' (Pin) here, to keep them independent
             st.rerun()
 
     if start_d > end_d:
@@ -79,28 +75,26 @@ if not geojson_areas:
     st.stop()
 
 if not df.empty:
-    # Create 'price_area_map' column (NO1 -> NO 1) for proper mapping/labelling
     df["price_area_map"] = df["price_area"].astype(str).str.replace("NO", "NO ")
 
 # ======================================================
 # 4. MAP VISUALIZATION
 # ======================================================
-# Layout: 3 parts Map, 1 part Info (Longer & Narrower Map)
 c_map, c_info = st.columns([3, 1])
 
 with c_map:
-    # Toggle for Bonus
-    show_munis = st.toggle("🔍 Show Municipalities (Bonus)", value=False)
+    # Toggle
+    show_munis = st.toggle("🔍 View Municipalities", value=False)
 
     feature_key = "properties.ElSpotOmr"
 
-    # --- LAYER 1: BASE MAP (With Labels Restored) ---
+    # --- LAYER 1: PRICE AREAS ---
     if not df.empty:
         fig = px.choropleth_mapbox(
             df,
             geojson=geojson_areas,
-            locations="price_area_map", # Matches 'NO 1'
-            featureidkey=feature_key,   # Matches GeoJSON
+            locations="price_area_map",
+            featureidkey=feature_key,
             color="avg_value",
             color_continuous_scale="Viridis",
             mapbox_style="carto-positron",
@@ -108,11 +102,10 @@ with c_map:
             center={"lat": 65.0, "lon": 16.0}, 
             opacity=0.6,
             labels={"avg_value": "MWh", "price_area_map": "Region"},
-            hover_name="price_area_map", # <--- THIS RESTORES THE LABELS (NO 1, NO 2)
+            hover_name="price_area_map",
             hover_data={"price_area_map": False, "avg_value": ":.2f"}
         )
     else:
-        # Fallback
         fig = px.choropleth_mapbox(
             geojson=geojson_areas,
             locations=["NO 1", "NO 2", "NO 3", "NO 4", "NO 5"],
@@ -123,7 +116,7 @@ with c_map:
             opacity=0.3
         )
 
-    # --- LAYER 2: MUNICIPALITIES (Overlay) ---
+    # --- LAYER 2: MUNICIPALITIES ---
     if show_munis and geojson_munis:
         first = geojson_munis['features'][0]['properties']
         muni_key = "properties.nummer" if 'nummer' in first else ("properties.kommunenummer" if 'kommunenummer' in first else "properties.id")
@@ -138,14 +131,14 @@ with c_map:
                 featureidkey=muni_key,
                 z=[1] * len(locs),
                 colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
-                marker_line_color='rgba(20, 20, 20, 0.8)', # Visible Black Lines
+                marker_line_color='rgba(20, 20, 20, 0.8)',
                 marker_line_width=0.8,
                 showscale=False,
-                hoverinfo='skip', # Pass clicks to price area
+                hoverinfo='skip',
                 name="Municipalities"
             ))
 
-    # --- LAYER 3: HIGHLIGHT SELECTED REGION ---
+    # --- LAYER 3: HIGHLIGHT ---
     hl_name = st.session_state["selected_price_area"].replace("NO", "NO ")
     fig.add_trace(go.Choroplethmapbox(
         geojson=geojson_areas,
@@ -157,10 +150,22 @@ with c_map:
         marker_line_width=4,
         showscale=False,
         hoverinfo="skip",
-        name="Selected"
+        name="Selected Region"
     ))
 
-    # Taller Layout (800px)
+    # --- LAYER 4: CLICK POINTER ---
+    if "selected_coords" in st.session_state:
+        coords = st.session_state["selected_coords"]
+        fig.add_trace(go.Scattermapbox(
+            lat=[coords['lat']],
+            lon=[coords['lon']],
+            mode='markers',
+            marker=go.scattermapbox.Marker(size=12, color='red', symbol='circle'),
+            text=["📍 Selected Pin"],
+            hoverinfo='text',
+            name="Pin"
+        ))
+
     fig.update_layout(
         margin=dict(r=0, t=0, l=0, b=0), 
         clickmode='event+select',
@@ -168,40 +173,58 @@ with c_map:
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
     )
 
-    # --- RENDER ---
     event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", selection_mode="points")
 
-    # --- INTERACTION (Background Updates) ---
+    # --- INTERACTION ---
     if event and "selection" in event and event["selection"]["points"]:
         point = event["selection"]["points"][0]
         
-        # 1. Coordinates (Always update, needed for weather page)
+        # 1. Update Coordinates (Pin)
         if "lat" in point:
-            st.session_state["selected_coords"] = {"lat": point["lat"], "lon": point["lon"]}
-            # Bonus: Fetch Elevation
-            elev = utils.fetch_elevation(point["lat"], point["lon"])
+            clat, clon = point["lat"], point["lon"]
+            st.session_state["selected_coords"] = {"lat": clat, "lon": clon}
+            
+            # Calculate Elevation on Click
+            elev = utils.fetch_elevation(clat, clon)
             if elev: st.session_state["elevation"] = elev
         
-        # 2. Region (Only if clicked price area)
+        # 2. Update Region (If clicked valid area)
         if "location" in point:
             clicked = point["location"].replace(" ", "")
             if clicked in utils.CITIES and clicked != st.session_state["selected_price_area"]:
                 st.session_state["selected_price_area"] = clicked
-                city = utils.CITIES[clicked]
-                # Update coords to city center if switching region via map
-                st.session_state["selected_coords"] = {"lat": city["lat"], "lon": city["lon"]}
+                # Do NOT overwrite coordinates here, keep the click
                 st.rerun()
+        else:
+            # Rerun to show the new pin even if region didn't change
+            st.rerun()
 
+# ======================================================
+# 5. SIDEBAR INFO PANEL
+# ======================================================
 with c_info:
-    st.info(f"""
-    **Active Region**
-    # {st.session_state['selected_price_area']}
+    # A. REGION INFO
+    curr_area = st.session_state["selected_price_area"]
+    area_center = utils.CITIES[curr_area]
     
-    **Coordinates**
-    {st.session_state['selected_coords']['lat']:.4f}, {st.session_state['selected_coords']['lon']:.4f}
-    """)
+    st.info(f"**Region: {curr_area}**")
+    st.caption(f"Default Center:\nLat {area_center['lat']:.2f}, Lon {area_center['lon']:.2f}")
+    
+    st.divider()
+    
+    # B. CLICK INFO
+    pin = st.session_state["selected_coords"]
+    st.error("**📍 Clicked Point**") # Using error box for Red color to match Pin
+    st.caption(f"Lat {pin['lat']:.4f}, Lon {pin['lon']:.4f}")
     
     if "elevation" in st.session_state:
-        st.metric("⛰️ Elevation", f"{st.session_state['elevation']} m")
-
-    st.caption("Use the map to select a region for analysis.")
+        st.metric("Elevation", f"{st.session_state['elevation']} m")
+    else:
+        st.caption("Click map to get elevation.")
+    
+    st.divider()
+    st.markdown("#### 💡 Tips")
+    st.caption("""
+    1. **Region:** Shows average energy data.
+    2. **Pin:** Selects specific location for weather & elevation analysis.
+    """)
