@@ -218,7 +218,7 @@ with c_map:
                 st.rerun()
 
 with c_info:
-    st.markdown("#### 📌 Selection Status")
+    st.markdown("#### Selection Status")
     with st.container(border=True):
         # 1. REGION INFO (Updated)
         curr = st.session_state["selected_price_area"]
@@ -237,12 +237,11 @@ with c_info:
         
         # 3. ELEVATION (Custom Style)
         if "elevation" in st.session_state:
-            st.markdown(f"""
-                <div style="text-align: center; border: 1px solid #dcdcdc; padding: 10px; border-radius: 8px; background-color: #f9f9f9; margin-top: 10px;">
-                    <span style="font-size: 1.1em; color: #555;">⛰️ Elevation</span>
-                    <h2 style="margin: 0; color: #004d40; font-size: 2em;">{st.session_state['elevation']} m</h2>
-                </div>
-            """, unsafe_allow_html=True)
+
+            st.markdown(
+                ":orange-badge[⛰️ Elevation]"
+                f" **{st.session_state['elevation']} meters** above sea level."
+            )
         else:
             st.caption("Click map to fetch elevation.")
 
