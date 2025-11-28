@@ -28,7 +28,7 @@ with st.container():
     c1, c2 = st.columns([1, 2])
     
     with c1:
-        st.markdown("#### 📅 Time Selection")
+        st.markdown("#### Time Selection")
         # Range Slider matches the "Hydro Year" concept
         year_range = st.slider(
             "Select Hydro Year Range",
@@ -40,7 +40,7 @@ with st.container():
         start_year, end_year = year_range
         
     with c2:
-        st.markdown("#### ⚙️ Model Parameters")
+        st.markdown("####  Model Parameters")
         c_p1, c_p2, c_p3 = st.columns(3)
         with c_p1:
             T = st.number_input("Max Transport (T)", value=3000, step=100, help="Max transport distance in meters")
@@ -49,7 +49,7 @@ with st.container():
         with c_p3:
             theta = st.number_input("Relocation (θ)", value=0.5, step=0.1, help="Relocation coefficient")
 
-    if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
+    if st.button(" Run Analysis", type="primary", use_container_width=True):
         # Define Hydro Year Range: 
         # Start: July 1st of start_year
         # End: June 30th of (end_year + 1)
@@ -118,7 +118,7 @@ with st.container():
         df_res = pd.DataFrame(annual_results)
 
         # --- 5. VISUALIZATION ---
-        tab1, tab2 = st.tabs(["📊 Annual Overview", "📈 Monthly Analysis (Bonus)"])
+        tab1, tab2 = st.tabs(["📊 Annual Overview", "📈 Monthly Analysis"])
 
         # --- TAB 1: ANNUAL ---
         with tab1:
@@ -137,7 +137,7 @@ with st.container():
                 st.plotly_chart(fig_annual, use_container_width=True)
                 
             with c_right:
-                st.subheader("🌬️ Drift Wind Rose")
+                st.subheader("Drift Wind Rose")
                 if sector_list:
                     all_sectors = pd.concat(sector_list)
                     avg_rose = all_sectors.groupby('sector_deg')['Qupot_hourly'].mean().reset_index()
@@ -161,7 +161,7 @@ with st.container():
                     st.info("No significant drift wind events.")
 
             st.divider()
-            st.markdown("#### 🚧 Recommended Fence Heights")
+            st.markdown("#### Recommended Fence Heights")
             cols_show = ['Season', 'Qt_tonnes_m', 'Wyoming (m)', 'Slat-Wire (m)', 'Solid (m)']
             st.dataframe(
                 df_res[cols_show].style.format("{:.2f}", subset=cols_show[1:]),

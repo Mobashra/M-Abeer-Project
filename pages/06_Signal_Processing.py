@@ -10,21 +10,26 @@ import analysis_functions as af
 # ======================================================
 st.set_page_config(page_title="Signal Processing", layout="wide")
 
+
+
 # 1. SAFETY & STYLING
 utils.check_session_state()
 utils.render_sidebar()
 
-st.title("📡 Signal Decomposition & Frequency Analysis")
+st.title("Signal Decomposition & Frequency Analysis")
+
+# --- ACTIVE AREA CONTEXT ---
+current_context_area = st.session_state.get("selected_price_area", "NO1")
+st.info(f"📍 **Currently Viewing:** Price Area **{current_context_area}**")
 
 # 2. CONTROLS (Dashboard Style)
 with st.container():
-    c1, c2, c3 = st.columns([1, 1, 2])
+    c1, c2 = st.columns(2)
     with c1:
         year = st.selectbox("Select Year", [2021, 2022, 2023, 2024], index=0)
     with c2:
         data_type = st.radio("Source", ["Production", "Consumption"], horizontal=True)
-    with c3:
-        st.info(f"**Scope:** {st.session_state['selected_price_area']}")
+
 
 # 3. LOAD DATA
 with st.spinner("Fetching data..."):

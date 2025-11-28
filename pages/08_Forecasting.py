@@ -14,7 +14,7 @@ st.set_page_config(page_title="Forecasting", layout="wide")
 # 1. STYLING
 utils.render_sidebar()
 
-st.title("📈 SARIMAX Energy Forecasting")
+st.title("SARIMAX Energy Forecasting")
 st.markdown("Forecast future energy patterns using **SARIMAX** with dynamic **Weather Exogenous Variables**.")
 
 # 2. STATE MANAGEMENT & LOCAL FALLBACK
@@ -33,7 +33,7 @@ with st.container():
     c1, c2, c3, c4 = st.columns(4)
     
     with c1:
-        st.markdown("###### 1. Data Source")
+        st.markdown("###### Energy Group")
         data_type = st.radio("Source", ["Production", "Consumption"], horizontal=True, label_visibility="collapsed")
 
         # Local Area Selector (Fallback)
@@ -50,7 +50,7 @@ with st.container():
             current_area = selected_area # Update current_area for immediate use
 
     with c2:
-        st.markdown("###### 2. Training Start Time")
+        st.markdown("###### Training Start Time")
         # Default: Jan 1, 2021 (Start of data)
         min_full_date = date(2021, 1, 1)
         max_full_date = date(2024, 12, 31)
@@ -64,7 +64,7 @@ with st.container():
         )
         
     with c3:
-        st.markdown("###### 3. Training End Time")
+        st.markdown("######  Training End Time")
         # Default: Feb 1, 2021 (1 month later)
         default_end = min_full_date + timedelta(days=30)
         
@@ -82,7 +82,7 @@ with st.container():
             st.stop()
 
     with c4:
-        st.markdown("###### 4. Forecast Horizon (Hours)")
+        st.markdown("###### Forecast Horizon (Hours)")
         horizon = st.number_input("Horizon", min_value=1, max_value=168, value=48, label_visibility="collapsed")
         
     st.info(f"**Forecast Region:** {current_area} (Weather Source: Lat {coords['lat']:.4f}, Lon {coords['lon']:.4f})")
@@ -125,7 +125,7 @@ with st.container():
         )
 
 # --- 4. MODEL HYPERPARAMETERS & EXECUTION ---
-with st.expander("⚙️ SARIMAX Model Parameters", expanded=False):
+with st.expander(" SARIMAX Model Parameters", expanded=False):
     c_p, c_d, c_q, c_s = st.columns(4)
     with c_p:
         p = st.number_input("AR (p)", 0, 5, 1, help="Auto-Regressive order")
@@ -141,7 +141,7 @@ with st.expander("⚙️ SARIMAX Model Parameters", expanded=False):
 
 st.divider()
 
-if st.button("🚀 Train & Forecast", type="primary", use_container_width=True):
+if st.button("Train & Forecast", type="primary", use_container_width=True):
     
     # --- A. PREPARE TARGET DATA ---
     ts_train = df_energy[
