@@ -120,6 +120,7 @@ with col_right:
             
             # Filter by Month Range
             df_filtered = df_filtered[
+                (df_filtered['date'].dt.year == year) & 
                 (df_filtered['date'].dt.month >= start_month) & 
                 (df_filtered['date'].dt.month <= end_month)
             ]
