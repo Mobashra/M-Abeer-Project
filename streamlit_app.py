@@ -81,7 +81,7 @@ st.markdown("""
     This platform bridges the gap between raw Observation Data and 
     Operational Intelligence. 
     By integrating historical grid data with ERA5 weather reanalysis, we provide tools to diagnose 
-    <span class="highlight-teal">past grid behaviors</span>, <span class="highlight-indigo">detect physical anomalies</span>, and <span class="highlight-orange">forecast future load risks</span>.
+    <span class="highlight-teal">past grid behaviors</span>, <span class="highlight-orange">detect physical anomalies</span>, and <span class="highlight-indigo">forecast future load risks</span>.
 </p>
 """, unsafe_allow_html=True)
 
