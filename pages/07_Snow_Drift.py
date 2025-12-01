@@ -34,7 +34,7 @@ with st.container():
         year_range = st.slider(
             "Select Hydro Year Range",
             min_value=2020,
-            max_value=2025,
+            max_value=2024,
             value=(2021, 2023), 
             help="Select the start and end years. A Hydro Year runs July-June."
         )
